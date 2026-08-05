@@ -58,13 +58,13 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
           </div>
 
           <div className="glass-panel rounded-xl p-4 border-l-4 border-emerald-500">
-            <div className="text-xs text-slate-400 font-semibold">2. Algorithme Bayésien (SIGMA)</div>
+            <div className="text-xs text-slate-400 font-semibold">2. Algorithme Bayésien (POMDP)</div>
             <div className="text-2xl font-black text-emerald-300 mt-1">{trioStats.sigmaSuccessRate.toFixed(1)}%</div>
             <div className="text-xs text-slate-400 mt-1">Victoires directes : {trioStats.sigmaWins} runs</div>
           </div>
 
           <div className="glass-panel rounded-xl p-4 border-l-4 border-purple-500">
-            <div className="text-xs text-slate-400 font-semibold">3. Modèle RL / PPO (Neurones)</div>
+            <div className="text-xs text-slate-400 font-semibold">3. Agent RL SIGMA (Neurones)</div>
             <div className="text-2xl font-black text-purple-300 mt-1">{trioStats.rlSuccessRate.toFixed(1)}%</div>
             <div className="text-xs text-slate-400 mt-1">Victoires directes : {trioStats.rlWins} runs</div>
           </div>
@@ -76,7 +76,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="glass-panel rounded-xl p-4 border-l-4 border-emerald-500">
             <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
-              <span>Victoires Algorithme SIGMA</span>
+              <span>Victoires Algorithme POMDP</span>
               <Trophy className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-black text-white mt-1">
@@ -121,7 +121,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
               <ShieldAlert className="w-4 h-4 text-rose-400" />
             </div>
             <div className="text-xl font-bold text-white mt-1">
-              SIGMA: <span className="text-emerald-400">{sigmaStats?.bingoRate.toFixed(1) || 0}%</span> | Naïf: <span className="text-rose-400">{naiveStats?.bingoRate.toFixed(1) || 0}%</span>
+              POMDP: <span className="text-emerald-400">{sigmaStats?.bingoRate.toFixed(1) || 0}%</span> | Naïf: <span className="text-rose-400">{naiveStats?.bingoRate.toFixed(1) || 0}%</span>
             </div>
             <div className="text-xs text-rose-400 font-bold mt-1">
               Réduction nette des retours bredouilles sur panne d'autonomie
@@ -153,7 +153,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
                 <tr className="hover:bg-slate-800/40 text-purple-300 font-semibold">
                   <td className="py-3 px-3 flex items-center space-x-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block" />
-                    <span>Modèle RL / PPO (Réseau de Neurones)</span>
+                    <span>Agent RL SIGMA (PPO / ONNX)</span>
                   </td>
                   <td className="py-3 px-3 text-sm font-bold text-purple-400">
                     {rlStats.successRate.toFixed(1)}%
@@ -168,7 +168,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
                 <tr className="hover:bg-slate-800/40 text-emerald-300 font-semibold">
                   <td className="py-3 px-3 flex items-center space-x-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-                    <span>Algorithme Bayésien SIGMA</span>
+                    <span>Algorithme Bayésien POMDP</span>
                   </td>
                   <td className="py-3 px-3 text-sm font-bold text-emerald-400">
                     {sigmaStats.successRate.toFixed(1)}%

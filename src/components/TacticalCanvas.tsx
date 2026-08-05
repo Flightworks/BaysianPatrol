@@ -518,7 +518,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
       <div className="absolute bottom-3 left-3 z-10 flex items-center space-x-3 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono shadow-xl">
         <div className="flex items-center space-x-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500" />
-          <span className="text-emerald-300 font-bold">SIGMA (Bayésien)</span>
+          <span className="text-emerald-300 font-bold">POMDP (Bayésien)</span>
           {selectedSigmaRun && (
             <span className="text-[10px] text-slate-400">
               ({selectedSigmaRun.intercepted ? `${selectedSigmaRun.interceptionTime.toFixed(0)} min` : 'Bingo'})

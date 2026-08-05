@@ -55,8 +55,8 @@ Pour évaluer objectivement les performances, le simulateur Monte-Carlo (`/src`)
 | Stratégie | Description / Principe | Type d'Algorithme |
 | :--- | :--- | :--- |
 | **Option 1 : Naïve (IAMSAR)** | Râteau de recherche géométrique parallèle basé sur les fiches théoriques SAR. | Heuristique déterministe fixe |
-| **Option 2 : Bayésienne (AMI / SIGMA)** | Solveur algorithmique recalculant à chaque pas de temps la passe transversale maximisant le gradient de croyance. | Solveur d'optimisation numérique |
-| **Option 3 : Modèle RL (PPO)** | Réseau de neurones inférant directement le cap et la vitesse optimaux selon l'état de croyance et les incertitudes. | Réseau de Neurones / ONNX Runtime |
+| **Option 2 : Bayésienne (AMI / POMDP)** | Solveur algorithmique recalculant à chaque pas de temps la passe transversale maximisant le gradient de croyance. | Solveur d'optimisation numérique |
+| **Option 3 : Modèle RL SIGMA (PPO)** | Réseau de neurones (Agent RL / SIGMA) inférant directement le cap et la vitesse optimaux selon l'état de croyance et les incertitudes. | Réseau de Neurones / ONNX Runtime |
 
 ---
 

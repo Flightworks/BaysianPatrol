@@ -163,9 +163,9 @@ export function App() {
             {simResult && (
               <span className="text-[11px] font-mono text-cyan-400 hidden sm:inline-block px-2">
                 {simResult.trioStats ? (
-                  <>🤖 RL: {simResult.rlStats?.successRate.toFixed(1) || 0}% | ⚡ AMI: {simResult.sigmaStats?.successRate.toFixed(1) || 0}% | 📐 Naïf: {simResult.naiveStats?.successRate.toFixed(1) || 0}%</>
+                  <>🤖 SIGMA (RL): {simResult.rlStats?.successRate.toFixed(1) || 0}% | ⚡ POMDP: {simResult.sigmaStats?.successRate.toFixed(1) || 0}% | 📐 Naïf: {simResult.naiveStats?.successRate.toFixed(1) || 0}%</>
                 ) : (
-                  <>⚡ SIGMA: {simResult.sigmaStats?.successRate.toFixed(1) || 0}% | 📐 Naïf: {simResult.naiveStats?.successRate.toFixed(1) || 0}%</>
+                  <>⚡ POMDP: {simResult.sigmaStats?.successRate.toFixed(1) || 0}% | 📐 Naïf: {simResult.naiveStats?.successRate.toFixed(1) || 0}%</>
                 )}
               </span>
             )}
