@@ -9,7 +9,7 @@ import type {
 } from '../types/simulation';
 import { TargetSim, type RunRealizationParams } from './targetGenerator';
 import { BayesianGrid } from './bayesianGrid';
-import { AMIPlanner } from './amiAlgorithm';
+import { SIGMAPlanner } from './sigmaAlgorithm';
 import { NaivePlanner } from './naiveAlgorithm';
 import { calculatePdet } from './radarModel';
 import type { RadarParams } from './radarModel';
@@ -20,7 +20,7 @@ import { normalizeAngle } from './random';
  */
 export function runSingleSimulationWithRealization(
   runId: number,
-  strategy: 'AMI' | 'NAIVE',
+  strategy: 'SIGMA' | 'NAIVE',
   config: ScenarioConfig,
   realization: RunRealizationParams
 ): MonteCarloRunResult {
@@ -31,7 +31,6 @@ export function runSingleSimulationWithRealization(
 
   const targetSim = new TargetSim(config, realization);
   
-  // Custom scenario config for this specific run's environment & frigate departure point
   const runConfig: ScenarioConfig = {
     ...config,
     windSpeed: realization.windSpeed,
@@ -53,7 +52,7 @@ export function runSingleSimulationWithRealization(
     status: 'SEARCHING',
   };
 
-  const amiPlanner = strategy === 'AMI' ? new AMIPlanner(runConfig) : null;
+  const sigmaPlanner = strategy === 'SIGMA' ? new SIGMAPlanner(runConfig) : null;
   const naivePlanner = strategy === 'NAIVE' ? new NaivePlanner(runConfig) : null;
 
   const helicoPath: HelicoPathPoint[] = [];
@@ -102,8 +101,8 @@ export function runSingleSimulationWithRealization(
 
     grid.updatePriorDensity(t);
 
-    if (strategy === 'AMI') {
-      helico = amiPlanner!.planStep(helico, grid, t, dt);
+    if (strategy === 'SIGMA') {
+      helico = sigmaPlanner!.planStep(helico, grid, t, dt);
     } else {
       helico = naivePlanner!.planStep(helico, t, dt);
     }
@@ -248,42 +247,42 @@ export function computeStrategyStats(runs: MonteCarloRunResult[]): StrategyStats
 }
 
 /**
- * Computes paired comparison KPIs between AMI and Naïve on exact identical realizations.
+ * Computes paired comparison KPIs between SIGMA and Naïve on exact identical realizations.
  */
 export function computePairedStats(
-  amiRuns: MonteCarloRunResult[],
+  sigmaRuns: MonteCarloRunResult[],
   naiveRuns: MonteCarloRunResult[]
 ): PairedComparisonStats {
-  const N = Math.min(amiRuns.length, naiveRuns.length);
+  const N = Math.min(sigmaRuns.length, naiveRuns.length);
   if (N === 0) {
     return {
-      amiWins: 0,
+      sigmaWins: 0,
       naiveWins: 0,
       ties: 0,
-      amiWinRate: 0,
+      sigmaWinRate: 0,
       meanTimeSavedMinutes: 0,
       meanFuelSavedMinutes: 0,
     };
   }
 
-  let amiWins = 0;
+  let sigmaWins = 0;
   let naiveWins = 0;
   let ties = 0;
   let totalTimeSaved = 0;
   let totalFuelSaved = 0;
 
   for (let k = 0; k < N; k++) {
-    const ami = amiRuns[k];
+    const sigma = sigmaRuns[k];
     const naive = naiveRuns[k];
 
-    if (ami.intercepted && !naive.intercepted) {
-      amiWins++;
-    } else if (!ami.intercepted && naive.intercepted) {
+    if (sigma.intercepted && !naive.intercepted) {
+      sigmaWins++;
+    } else if (!sigma.intercepted && naive.intercepted) {
       naiveWins++;
-    } else if (ami.intercepted && naive.intercepted) {
-      if (ami.interceptionTime < naive.interceptionTime - 1.0) {
-        amiWins++;
-      } else if (naive.interceptionTime < ami.interceptionTime - 1.0) {
+    } else if (sigma.intercepted && naive.intercepted) {
+      if (sigma.interceptionTime < naive.interceptionTime - 1.0) {
+        sigmaWins++;
+      } else if (naive.interceptionTime < sigma.interceptionTime - 1.0) {
         naiveWins++;
       } else {
         ties++;
@@ -292,15 +291,15 @@ export function computePairedStats(
       ties++;
     }
 
-    totalTimeSaved += (naive.interceptionTime - ami.interceptionTime);
-    totalFuelSaved += (naive.fuelConsumed - ami.fuelConsumed);
+    totalTimeSaved += (naive.interceptionTime - sigma.interceptionTime);
+    totalFuelSaved += (naive.fuelConsumed - sigma.fuelConsumed);
   }
 
   return {
-    amiWins,
+    sigmaWins,
     naiveWins,
     ties,
-    amiWinRate: (amiWins / N) * 100.0,
+    sigmaWinRate: (sigmaWins / N) * 100.0,
     meanTimeSavedMinutes: totalTimeSaved / N,
     meanFuelSavedMinutes: totalFuelSaved / N,
   };
@@ -316,21 +315,21 @@ export function runMonteCarloSuite(
   const startTime = performance.now();
   const N = config.numIterations;
 
-  const amiRuns: MonteCarloRunResult[] = [];
+  const sigmaRuns: MonteCarloRunResult[] = [];
   const naiveRuns: MonteCarloRunResult[] = [];
 
-  const runAMI = config.strategy === 'AMI' || config.strategy === 'BOTH';
+  const runSIGMA = config.strategy === 'SIGMA' || config.strategy === 'BOTH';
   const runNaive = config.strategy === 'NAIVE' || config.strategy === 'BOTH';
 
-  const totalTasks = N * ((runAMI ? 1 : 0) + (runNaive ? 1 : 0));
+  const totalTasks = N * ((runSIGMA ? 1 : 0) + (runNaive ? 1 : 0));
   let completed = 0;
 
   for (let k = 1; k <= N; k++) {
     const targetSimHelper = new TargetSim(config);
     const realization = targetSimHelper.getRealization();
 
-    if (runAMI) {
-      amiRuns.push(runSingleSimulationWithRealization(k, 'AMI', config, realization));
+    if (runSIGMA) {
+      sigmaRuns.push(runSingleSimulationWithRealization(k, 'SIGMA', config, realization));
       completed++;
       if (onProgress && completed % 10 === 0) {
         onProgress((completed / totalTasks) * 100);
@@ -346,18 +345,18 @@ export function runMonteCarloSuite(
     }
   }
 
-  const amiStats = runAMI ? computeStrategyStats(amiRuns) : undefined;
+  const sigmaStats = runSIGMA ? computeStrategyStats(sigmaRuns) : undefined;
   const naiveStats = runNaive ? computeStrategyStats(naiveRuns) : undefined;
-  const pairedStats = (runAMI && runNaive) ? computePairedStats(amiRuns, naiveRuns) : undefined;
+  const pairedStats = (runSIGMA && runNaive) ? computePairedStats(sigmaRuns, naiveRuns) : undefined;
 
   const executionTimeMs = performance.now() - startTime;
 
   return {
     config,
-    amiStats,
+    sigmaStats,
     naiveStats,
     pairedStats,
-    amiRuns,
+    sigmaRuns,
     naiveRuns,
     executionTimeMs,
   };

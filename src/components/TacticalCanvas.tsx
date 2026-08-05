@@ -5,7 +5,7 @@ import { Eye, EyeOff, Layers, ZoomIn, ZoomOut, RotateCcw, Activity, Sparkles } f
 
 interface TacticalCanvasProps {
   config: ScenarioConfig;
-  selectedAmiRun?: MonteCarloRunResult | null;
+  selectedSigmaRun?: MonteCarloRunResult | null;
   selectedNaiveRun?: MonteCarloRunResult | null;
   currentPlaybackTime: number; // minutes
   showTargetGroundTruth: boolean;
@@ -17,7 +17,7 @@ interface TacticalCanvasProps {
 
 export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
   config,
-  selectedAmiRun,
+  selectedSigmaRun,
   selectedNaiveRun,
   currentPlaybackTime,
   showTargetGroundTruth,
@@ -48,7 +48,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Main Dual-Trajectory Render Loop
+  // Main Dual-Trajectory Render Loop (SIGMA vs Naive)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -78,7 +78,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
     const nmToPxY = (nmY: number) => centerY - nmY * baseScale;
 
     // Primary run used for grid heatmaps
-    const activeSnapshotRun = selectedAmiRun || selectedNaiveRun;
+    const activeSnapshotRun = selectedSigmaRun || selectedNaiveRun;
     const activeEnv = activeSnapshotRun?.runEnv || config;
 
     // 1. Draw Coordinate Grid Lines (Every 5 NM)
@@ -209,7 +209,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
         if (run.interceptPoint) {
           const ipX = nmToPxX(run.interceptPoint.x);
           const ipY = nmToPxY(run.interceptPoint.y);
-          ctx.fillStyle = run.strategy === 'AMI' ? 'rgba(16, 185, 129, 0.7)' : 'rgba(245, 158, 11, 0.7)';
+          ctx.fillStyle = run.strategy === 'SIGMA' ? 'rgba(16, 185, 129, 0.7)' : 'rgba(245, 158, 11, 0.7)';
           ctx.beginPath();
           ctx.arc(ipX, ipY, 2.5, 0, Math.PI * 2);
           ctx.fill();
@@ -217,14 +217,14 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
       }
     }
 
-    // 5. DRAW DUAL TRAJECTORIES COMPARISON (AMI Green vs Naïve Amber)
+    // 5. DRAW DUAL TRAJECTORIES COMPARISON (SIGMA Green vs Naïve Amber)
 
-    // A. NAÏVE TRAJECTORY (Axial Pursuit Baseline - Amber/Gold)
+    // A. NAÏVE TRAJECTORY (Classic Creeping Line Baseline - Amber/Gold)
     if (selectedNaiveRun) {
       const hPointsNaive = selectedNaiveRun.helicoPath.filter(p => p.t <= currentPlaybackTime);
       if (hPointsNaive.length > 0) {
         ctx.lineWidth = 2.5;
-        ctx.strokeStyle = '#f59e0b'; // Amber 500
+        ctx.strokeStyle = '#f59e0b';
         ctx.beginPath();
         ctx.moveTo(nmToPxX(hPointsNaive[0].x), nmToPxY(hPointsNaive[0].y));
         for (let p = 1; p < hPointsNaive.length; p++) {
@@ -236,7 +236,6 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
         const naivePxX = nmToPxX(currentNaive.x);
         const naivePxY = nmToPxY(currentNaive.y);
 
-        // Naïve Helicopter Marker Icon
         ctx.fillStyle = '#f59e0b';
         ctx.beginPath();
         ctx.arc(naivePxX, naivePxY, 6, 0, Math.PI * 2);
@@ -251,24 +250,23 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
       }
     }
 
-    // B. AMI TRAJECTORY (Optimized Bayesian Interception - Emerald Green)
-    if (selectedAmiRun) {
-      const hPointsAmi = selectedAmiRun.helicoPath.filter(p => p.t <= currentPlaybackTime);
-      if (hPointsAmi.length > 0) {
+    // B. SIGMA TRAJECTORY (Optimized Bayesian Interception - Emerald Green)
+    if (selectedSigmaRun) {
+      const hPointsSigma = selectedSigmaRun.helicoPath.filter(p => p.t <= currentPlaybackTime);
+      if (hPointsSigma.length > 0) {
         ctx.lineWidth = 3.0;
-        ctx.strokeStyle = '#10b981'; // Emerald 500
+        ctx.strokeStyle = '#10b981';
         ctx.beginPath();
-        ctx.moveTo(nmToPxX(hPointsAmi[0].x), nmToPxY(hPointsAmi[0].y));
-        for (let p = 1; p < hPointsAmi.length; p++) {
-          ctx.lineTo(nmToPxX(hPointsAmi[p].x), nmToPxY(hPointsAmi[p].y));
+        ctx.moveTo(nmToPxX(hPointsSigma[0].x), nmToPxY(hPointsSigma[0].y));
+        for (let p = 1; p < hPointsSigma.length; p++) {
+          ctx.lineTo(nmToPxX(hPointsSigma[p].x), nmToPxY(hPointsSigma[p].y));
         }
         ctx.stroke();
 
-        const currentAmi = hPointsAmi[hPointsAmi.length - 1];
-        const amiPxX = nmToPxX(currentAmi.x);
-        const amiPxY = nmToPxY(currentAmi.y);
+        const currentSigma = hPointsSigma[hPointsSigma.length - 1];
+        const sigmaPxX = nmToPxX(currentSigma.x);
+        const sigmaPxY = nmToPxY(currentSigma.y);
 
-        // Anisotropic Radar Footprint for Active AMI Helicopter
         const contour = getRadarFootprintContour(config.meanHeading, {
           baseRange: config.radarBaseRange,
           windSpeed: activeEnv.windSpeed ?? config.windSpeed,
@@ -278,9 +276,9 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
         ctx.save();
         ctx.beginPath();
         if (contour.length > 0) {
-          ctx.moveTo(nmToPxX(currentAmi.x + contour[0].dx), nmToPxY(currentAmi.y + contour[0].dy));
+          ctx.moveTo(nmToPxX(currentSigma.x + contour[0].dx), nmToPxY(currentSigma.y + contour[0].dy));
           for (let p = 1; p < contour.length; p++) {
-            ctx.lineTo(nmToPxX(currentAmi.x + contour[p].dx), nmToPxY(currentAmi.y + contour[p].dy));
+            ctx.lineTo(nmToPxX(currentSigma.x + contour[p].dx), nmToPxY(currentSigma.y + contour[p].dy));
           }
         }
         ctx.closePath();
@@ -292,10 +290,9 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
         ctx.stroke();
         ctx.restore();
 
-        // AMI Helicopter Marker Icon
         ctx.fillStyle = '#10b981';
         ctx.beginPath();
-        ctx.arc(amiPxX, amiPxY, 6.5, 0, Math.PI * 2);
+        ctx.arc(sigmaPxX, sigmaPxY, 6.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1.5;
@@ -303,7 +300,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
         ctx.fillStyle = '#d1fae5';
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText(`HÉLICO AMI (${currentAmi.status})`, amiPxX + 10, amiPxY - 8);
+        ctx.fillText(`HÉLICO SIGMA (${currentSigma.status})`, sigmaPxX + 10, sigmaPxY - 8);
       }
     }
 
@@ -410,7 +407,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
   }, [
     config,
-    selectedAmiRun,
+    selectedSigmaRun,
     selectedNaiveRun,
     currentPlaybackTime,
     showTargetGroundTruth,
@@ -517,14 +514,14 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
         </button>
       </div>
 
-      {/* Dynamic Comparison Legend Badge (AMI Green vs Naïve Amber) */}
+      {/* Dynamic Comparison Legend Badge (SIGMA Green vs Naïve Amber) */}
       <div className="absolute bottom-3 left-3 z-10 flex items-center space-x-3 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono shadow-xl">
         <div className="flex items-center space-x-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500" />
-          <span className="text-emerald-300 font-bold">AMI (Bayésien)</span>
-          {selectedAmiRun && (
+          <span className="text-emerald-300 font-bold">SIGMA (Bayésien)</span>
+          {selectedSigmaRun && (
             <span className="text-[10px] text-slate-400">
-              ({selectedAmiRun.intercepted ? `${selectedAmiRun.interceptionTime.toFixed(0)} min` : 'Bingo'})
+              ({selectedSigmaRun.intercepted ? `${selectedSigmaRun.interceptionTime.toFixed(0)} min` : 'Bingo'})
             </span>
           )}
         </div>
@@ -533,7 +530,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
         <div className="flex items-center space-x-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500" />
-          <span className="text-amber-300 font-bold">Naïf (Axial)</span>
+          <span className="text-amber-300 font-bold">Naïf (Râteau)</span>
           {selectedNaiveRun && (
             <span className="text-[10px] text-slate-400">
               ({selectedNaiveRun.intercepted ? `${selectedNaiveRun.interceptionTime.toFixed(0)} min` : 'Bingo'})

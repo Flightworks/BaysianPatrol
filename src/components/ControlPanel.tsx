@@ -246,9 +246,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onChange, di
               disabled={disabled}
               className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-slate-100 font-bold cursor-pointer"
             >
-              <option value="BOTH">AMI vs NAÏVE (Apparié)</option>
-              <option value="AMI">Seul AMI (Bayésien)</option>
-              <option value="NAIVE">Seule Axiale Naïve</option>
+              <option value="BOTH">SIGMA vs NAÏVE (Apparié)</option>
+              <option value="SIGMA">Seul SIGMA (Bayésien)</option>
+              <option value="NAIVE">Seule Râteau Naïf</option>
             </select>
           </div>
         </div>

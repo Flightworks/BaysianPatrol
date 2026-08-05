@@ -3,13 +3,13 @@ import type { BayesianGrid } from './bayesianGrid';
 import { degToRad, radToDeg, normalizeAngle } from './random';
 
 /**
- * AMI (Advanced Bayesian Interception) Trajectory Planner.
+ * SIGMA (Search & Intercept Guided Marine Algorithm) Trajectory Planner.
  * Guided dynamically by:
  * 1. Bayesian Posterior probability density P_posterior(M_i, t)
  * 2. Expanding cross-track uncertainty corridor L_half(t) = 2.2 * sigma_cross(t) + R_eff (>95% coverage)
  * 3. Perpendicular approach angle advantage (maximizing SER and visual wake detection)
  */
-export class AMIPlanner {
+export class SIGMAPlanner {
   private config: ScenarioConfig;
   private phase: 'COUP_DE_FAUX' | 'BAYESIAN_PERPENDICULAR_CREEPING' | 'BINGO_RETURN' = 'COUP_DE_FAUX';
   private creepingDirection: number = 1;
@@ -162,7 +162,6 @@ export class AMIPlanner {
       };
     } else {
       // BAYESIAN PERPENDICULAR CREEPING LINE:
-      // Evaluate tactical value per unscanned cell combining posterior probability AND perpendicular aspect angle
       let maxScore = -1.0;
       let maxCell = { x: interceptMeanX, y: interceptMeanY };
 
@@ -177,7 +176,7 @@ export class AMIPlanner {
 
           // Aspect angle alpha relative to target course
           const aspectRad = degToRad(normalizeAngle(bearingDeg - meanHeading));
-          const perpFactor = Math.abs(Math.sin(aspectRad)); // 1.0 when approach is perpendicular!
+          const perpFactor = Math.abs(Math.sin(aspectRad));
 
           // Tactical Score: P_posterior * PerpendicularApproachBonus
           const score = cell.pPresence * (0.6 + 0.4 * perpFactor);

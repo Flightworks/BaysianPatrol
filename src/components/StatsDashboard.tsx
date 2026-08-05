@@ -7,7 +7,7 @@ interface StatsDashboardProps {
 }
 
 export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
-  const { amiStats, naiveStats, pairedStats, executionTimeMs, config } = result;
+  const { sigmaStats, naiveStats, pairedStats, executionTimeMs, config } = result;
 
   return (
     <div className="space-y-6">
@@ -27,9 +27,9 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
           <div className="flex items-center space-x-3 bg-slate-900/90 border border-emerald-500/40 rounded-lg px-4 py-2 text-xs">
             <Zap className="w-4 h-4 text-emerald-400 animate-pulse" />
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Domination Méthode AMI:</span>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Domination Algorithme SIGMA:</span>
               <span className="text-emerald-300 font-extrabold text-sm">
-                AMI gagne dans {pairedStats.amiWinRate.toFixed(1)}% des scénarios
+                SIGMA gagne dans {pairedStats.sigmaWinRate.toFixed(1)}% des scénarios
               </span>
             </div>
           </div>
@@ -42,14 +42,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
           {/* KPI 1: Win Rate */}
           <div className="glass-panel rounded-xl p-4 border-l-4 border-emerald-500">
             <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
-              <span>Victoires Méthode AMI</span>
+              <span>Victoires Algorithme SIGMA</span>
               <Trophy className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-black text-white mt-1">
-              {pairedStats.amiWins} <span className="text-xs font-normal text-slate-400">/ {config.numIterations} runs</span>
+              {pairedStats.sigmaWins} <span className="text-xs font-normal text-slate-400">/ {config.numIterations} runs</span>
             </div>
             <div className="text-xs text-emerald-400 font-bold mt-1">
-              Taux de succès relatif : {pairedStats.amiWinRate.toFixed(1)}%
+              Taux de succès relatif : {pairedStats.sigmaWinRate.toFixed(1)}%
             </div>
           </div>
 
@@ -64,7 +64,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
               <span className="text-xs font-normal text-slate-400">min</span>
             </div>
             <div className="text-xs text-cyan-400 font-bold mt-1">
-              Interception plus rapide par rapport à la poursuite naïve
+              Interception plus rapide par rapport au râteau classique
             </div>
           </div>
 
@@ -90,7 +90,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
               <ShieldAlert className="w-4 h-4 text-rose-400" />
             </div>
             <div className="text-xl font-bold text-white mt-1">
-              AMI: <span className="text-emerald-400">{amiStats?.bingoRate.toFixed(1) || 0}%</span> | Naïf: <span className="text-rose-400">{naiveStats?.bingoRate.toFixed(1) || 0}%</span>
+              SIGMA: <span className="text-emerald-400">{sigmaStats?.bingoRate.toFixed(1) || 0}%</span> | Naïf: <span className="text-rose-400">{naiveStats?.bingoRate.toFixed(1) || 0}%</span>
             </div>
             <div className="text-xs text-rose-400 font-bold mt-1">
               Réduction nette des retours bredouilles sur panne d'autonomie
@@ -103,7 +103,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
       <div className="glass-panel rounded-xl p-5 space-y-4">
         <h3 className="text-sm font-bold text-white flex items-center space-x-2">
           <TrendingUp className="w-4 h-4 text-cyan-400" />
-          <span>Tableau Comparatif Global (AMI vs Naïf)</span>
+          <span>Tableau Comparatif Global (SIGMA vs Râteau Naïf)</span>
         </h3>
 
         <div className="overflow-x-auto">
@@ -118,18 +118,18 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
-              {amiStats && (
+              {sigmaStats && (
                 <tr className="hover:bg-slate-800/40 text-emerald-300 font-semibold">
                   <td className="py-3 px-3 flex items-center space-x-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-                    <span>Recherche Bayésienne Optimisée (AMI)</span>
+                    <span>Algorithme Bayésien SIGMA</span>
                   </td>
                   <td className="py-3 px-3 text-sm font-bold text-emerald-400">
-                    {amiStats.successRate.toFixed(1)}%
+                    {sigmaStats.successRate.toFixed(1)}%
                   </td>
-                  <td className="py-3 px-3">{amiStats.meanInterceptionTime.toFixed(1)} min</td>
-                  <td className="py-3 px-3">{amiStats.meanFuelConsumed.toFixed(1)} min</td>
-                  <td className="py-3 px-3">{amiStats.bingoRate.toFixed(1)}%</td>
+                  <td className="py-3 px-3">{sigmaStats.meanInterceptionTime.toFixed(1)} min</td>
+                  <td className="py-3 px-3">{sigmaStats.meanFuelConsumed.toFixed(1)} min</td>
+                  <td className="py-3 px-3">{sigmaStats.bingoRate.toFixed(1)}%</td>
                 </tr>
               )}
 
@@ -137,7 +137,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
                 <tr className="hover:bg-slate-800/40 text-amber-300 font-semibold">
                   <td className="py-3 px-3 flex items-center space-x-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
-                    <span>Poursuite Axiale Naïve (Base)</span>
+                    <span>Râteau Classique Naïf (Base)</span>
                   </td>
                   <td className="py-3 px-3 text-sm font-bold text-amber-400">
                     {naiveStats.successRate.toFixed(1)}%

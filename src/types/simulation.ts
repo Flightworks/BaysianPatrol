@@ -46,7 +46,7 @@ export interface ScenarioConfig {
   gridCellSize: number;      // Maille size in NM (default 0.5 NM)
   dt: number;                // Time step in minutes (default 1.0 min)
   numIterations: number;     // Monte-Carlo N
-  strategy: 'AMI' | 'NAIVE' | 'BOTH';
+  strategy: 'SIGMA' | 'NAIVE' | 'BOTH';
 }
 
 export interface TargetState {
@@ -81,7 +81,7 @@ export type GridMode = 'CLASSICAL' | 'BAYESIAN_STANDARD' | 'BAYESIAN_EVOLVED';
 
 export interface MonteCarloRunResult {
   runId: number;
-  strategy: 'AMI' | 'NAIVE';
+  strategy: 'SIGMA' | 'NAIVE';
   intercepted: boolean;
   interceptionTime: number; // minutes
   fuelConsumed: number;     // minutes
@@ -125,20 +125,20 @@ export interface StrategyStats {
 }
 
 export interface PairedComparisonStats {
-  amiWins: number;
+  sigmaWins: number;
   naiveWins: number;
   ties: number;
-  amiWinRate: number; // percentage
+  sigmaWinRate: number; // percentage
   meanTimeSavedMinutes: number;
   meanFuelSavedMinutes: number;
 }
 
 export interface GlobalSimulationResult {
   config: ScenarioConfig;
-  amiStats?: StrategyStats;
+  sigmaStats?: StrategyStats;
   naiveStats?: StrategyStats;
   pairedStats?: PairedComparisonStats;
-  amiRuns: MonteCarloRunResult[];
+  sigmaRuns: MonteCarloRunResult[];
   naiveRuns: MonteCarloRunResult[];
   executionTimeMs: number;
 }

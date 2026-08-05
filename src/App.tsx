@@ -104,12 +104,12 @@ export function App() {
     }, 50);
   };
 
-  const amiRuns = simResult ? simResult.amiRuns : [];
+  const sigmaRuns = simResult ? simResult.sigmaRuns : [];
   const naiveRuns = simResult ? simResult.naiveRuns : [];
   
-  const selectedAmiRun = amiRuns[selectedRunIndex] || null;
+  const selectedSigmaRun = sigmaRuns[selectedRunIndex] || null;
   const selectedNaiveRun = naiveRuns[selectedRunIndex] || null;
-  const activeRunList = amiRuns.length > 0 ? amiRuns : naiveRuns;
+  const activeRunList = sigmaRuns.length > 0 ? sigmaRuns : naiveRuns;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950">
@@ -143,7 +143,7 @@ export function App() {
                 }`}
               >
                 <Map className="w-4 h-4" />
-                <span>Carte Tactique & Comparaison des Trajectoires</span>
+                <span>Carte Tactique & Comparaison SIGMA vs Naïf</span>
               </button>
 
               <button
@@ -161,7 +161,7 @@ export function App() {
 
             {simResult && (
               <span className="text-[11px] font-mono text-emerald-400 hidden sm:inline-block px-2">
-                AMI: {simResult.amiStats?.successRate.toFixed(1) || 0}% | Naïf: {simResult.naiveStats?.successRate.toFixed(1) || 0}%
+                SIGMA: {simResult.sigmaStats?.successRate.toFixed(1) || 0}% | Naïf: {simResult.naiveStats?.successRate.toFixed(1) || 0}%
               </span>
             )}
           </div>
@@ -171,7 +171,7 @@ export function App() {
             <div className="flex-1 flex flex-col space-y-4">
               <TacticalCanvas
                 config={config}
-                selectedAmiRun={selectedAmiRun}
+                selectedSigmaRun={selectedSigmaRun}
                 selectedNaiveRun={selectedNaiveRun}
                 currentPlaybackTime={playbackTime}
                 showTargetGroundTruth={showGroundTruth}
