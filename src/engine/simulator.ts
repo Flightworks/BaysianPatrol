@@ -3,6 +3,7 @@ import type {
   MonteCarloRunResult,
   StrategyStats,
   PairedComparisonStats,
+  TrioComparisonStats,
   GlobalSimulationResult,
   HelicopterState,
   HelicoPathPoint
@@ -11,6 +12,7 @@ import { TargetSim, type RunRealizationParams } from './targetGenerator';
 import { BayesianGrid } from './bayesianGrid';
 import { SIGMAPlanner } from './sigmaAlgorithm';
 import { NaivePlanner } from './naiveAlgorithm';
+import { RLPlanner } from './rlAlgorithm';
 import { calculatePdet } from './radarModel';
 import type { RadarParams } from './radarModel';
 import { normalizeAngle } from './random';
@@ -20,7 +22,7 @@ import { normalizeAngle } from './random';
  */
 export function runSingleSimulationWithRealization(
   runId: number,
-  strategy: 'SIGMA' | 'NAIVE',
+  strategy: 'SIGMA' | 'NAIVE' | 'RL_MODEL',
   config: ScenarioConfig,
   realization: RunRealizationParams
 ): MonteCarloRunResult {
@@ -54,6 +56,7 @@ export function runSingleSimulationWithRealization(
 
   const sigmaPlanner = strategy === 'SIGMA' ? new SIGMAPlanner(runConfig) : null;
   const naivePlanner = strategy === 'NAIVE' ? new NaivePlanner(runConfig) : null;
+  const rlPlanner = strategy === 'RL_MODEL' ? new RLPlanner(runConfig) : null;
 
   const helicoPath: HelicoPathPoint[] = [];
   const heatmapSnapshots: Array<{
@@ -103,8 +106,10 @@ export function runSingleSimulationWithRealization(
 
     if (strategy === 'SIGMA') {
       helico = sigmaPlanner!.planStep(helico, grid, t, dt);
-    } else {
+    } else if (strategy === 'NAIVE') {
       helico = naivePlanner!.planStep(helico, t, dt);
+    } else if (strategy === 'RL_MODEL') {
+      helico = rlPlanner!.planStep(helico, grid, t, dt);
     }
 
     if (helico.status === 'BINGO_RETURN') {
@@ -306,7 +311,87 @@ export function computePairedStats(
 }
 
 /**
- * Runs complete Paired Monte-Carlo simulation suite with stochastic environmental and omnidirectional frigate sector variability.
+ * Computes 3-way stats between Naive, SIGMA, and RL_MODEL.
+ */
+export function computeTrioStats(
+  naiveRuns: MonteCarloRunResult[],
+  sigmaRuns: MonteCarloRunResult[],
+  rlRuns: MonteCarloRunResult[]
+): TrioComparisonStats {
+  const N = Math.min(naiveRuns.length, sigmaRuns.length, rlRuns.length);
+  if (N === 0) {
+    return {
+      naiveWins: 0,
+      sigmaWins: 0,
+      rlWins: 0,
+      ties: 0,
+      bestStrategy: 'SIGMA',
+      naiveSuccessRate: 0,
+      sigmaSuccessRate: 0,
+      rlSuccessRate: 0,
+    };
+  }
+
+  let naiveWins = 0;
+  let sigmaWins = 0;
+  let rlWins = 0;
+  let ties = 0;
+
+  for (let k = 0; k < N; k++) {
+    const naive = naiveRuns[k];
+    const sigma = sigmaRuns[k];
+    const rl = rlRuns[k];
+
+    const times = [
+      { strat: 'NAIVE' as const, intercepted: naive.intercepted, t: naive.interceptionTime },
+      { strat: 'SIGMA' as const, intercepted: sigma.intercepted, t: sigma.interceptionTime },
+      { strat: 'RL_MODEL' as const, intercepted: rl.intercepted, t: rl.interceptionTime },
+    ];
+
+    const valid = times.filter(x => x.intercepted);
+    if (valid.length === 0) {
+      ties++;
+    } else {
+      valid.sort((a, b) => a.t - b.t);
+      if (valid.length > 1 && Math.abs(valid[0].t - valid[1].t) < 0.5) {
+        ties++;
+      } else if (valid[0].strat === 'NAIVE') {
+        naiveWins++;
+      } else if (valid[0].strat === 'SIGMA') {
+        sigmaWins++;
+      } else {
+        rlWins++;
+      }
+    }
+  }
+
+  const naiveSuccessRate = (naiveRuns.filter(r => r.intercepted).length / N) * 100;
+  const sigmaSuccessRate = (sigmaRuns.filter(r => r.intercepted).length / N) * 100;
+  const rlSuccessRate = (rlRuns.filter(r => r.intercepted).length / N) * 100;
+
+  let bestStrategy: 'NAIVE' | 'SIGMA' | 'RL_MODEL' = 'SIGMA';
+  if (rlSuccessRate >= sigmaSuccessRate && rlSuccessRate >= naiveSuccessRate) {
+    bestStrategy = 'RL_MODEL';
+  } else if (sigmaSuccessRate >= naiveSuccessRate) {
+    bestStrategy = 'SIGMA';
+  } else {
+    bestStrategy = 'NAIVE';
+  }
+
+  return {
+    naiveWins,
+    sigmaWins,
+    rlWins,
+    ties,
+    bestStrategy,
+    naiveSuccessRate,
+    sigmaSuccessRate,
+    rlSuccessRate,
+  };
+}
+
+/**
+ * Runs complete Paired / Trio Monte-Carlo simulation suite with stochastic environmental and omnidirectional frigate sector variability.
  */
 export function runMonteCarloSuite(
   config: ScenarioConfig,
@@ -317,11 +402,14 @@ export function runMonteCarloSuite(
 
   const sigmaRuns: MonteCarloRunResult[] = [];
   const naiveRuns: MonteCarloRunResult[] = [];
+  const rlRuns: MonteCarloRunResult[] = [];
 
-  const runSIGMA = config.strategy === 'SIGMA' || config.strategy === 'BOTH';
-  const runNaive = config.strategy === 'NAIVE' || config.strategy === 'BOTH';
+  const isTrio = config.strategy === 'TRIO';
+  const runSIGMA = config.strategy === 'SIGMA' || config.strategy === 'BOTH' || isTrio;
+  const runNaive = config.strategy === 'NAIVE' || config.strategy === 'BOTH' || isTrio;
+  const runRL = config.strategy === 'RL_MODEL' || isTrio;
 
-  const totalTasks = N * ((runSIGMA ? 1 : 0) + (runNaive ? 1 : 0));
+  const totalTasks = N * ((runSIGMA ? 1 : 0) + (runNaive ? 1 : 0) + (runRL ? 1 : 0));
   let completed = 0;
 
   for (let k = 1; k <= N; k++) {
@@ -343,11 +431,21 @@ export function runMonteCarloSuite(
         onProgress((completed / totalTasks) * 100);
       }
     }
+
+    if (runRL) {
+      rlRuns.push(runSingleSimulationWithRealization(k, 'RL_MODEL', config, realization));
+      completed++;
+      if (onProgress && completed % 10 === 0) {
+        onProgress((completed / totalTasks) * 100);
+      }
+    }
   }
 
   const sigmaStats = runSIGMA ? computeStrategyStats(sigmaRuns) : undefined;
   const naiveStats = runNaive ? computeStrategyStats(naiveRuns) : undefined;
+  const rlStats = runRL ? computeStrategyStats(rlRuns) : undefined;
   const pairedStats = (runSIGMA && runNaive) ? computePairedStats(sigmaRuns, naiveRuns) : undefined;
+  const trioStats = (isTrio) ? computeTrioStats(naiveRuns, sigmaRuns, rlRuns) : undefined;
 
   const executionTimeMs = performance.now() - startTime;
 
@@ -355,9 +453,12 @@ export function runMonteCarloSuite(
     config,
     sigmaStats,
     naiveStats,
+    rlStats,
     pairedStats,
+    trioStats,
     sigmaRuns,
     naiveRuns,
+    rlRuns,
     executionTimeMs,
   };
 }

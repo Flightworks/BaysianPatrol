@@ -106,10 +106,11 @@ export function App() {
 
   const sigmaRuns = simResult ? simResult.sigmaRuns : [];
   const naiveRuns = simResult ? simResult.naiveRuns : [];
+  const rlRuns = simResult ? simResult.rlRuns : [];
   
   const selectedSigmaRun = sigmaRuns[selectedRunIndex] || null;
   const selectedNaiveRun = naiveRuns[selectedRunIndex] || null;
-  const activeRunList = sigmaRuns.length > 0 ? sigmaRuns : naiveRuns;
+  const activeRunList = rlRuns.length > 0 ? rlRuns : sigmaRuns.length > 0 ? sigmaRuns : naiveRuns;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950">
@@ -143,7 +144,7 @@ export function App() {
                 }`}
               >
                 <Map className="w-4 h-4" />
-                <span>Carte Tactique & Comparaison SIGMA vs Naïf</span>
+                <span>Carte Tactique & Visualisation Monte-Carlo</span>
               </button>
 
               <button
@@ -160,8 +161,12 @@ export function App() {
             </div>
 
             {simResult && (
-              <span className="text-[11px] font-mono text-emerald-400 hidden sm:inline-block px-2">
-                SIGMA: {simResult.sigmaStats?.successRate.toFixed(1) || 0}% | Naïf: {simResult.naiveStats?.successRate.toFixed(1) || 0}%
+              <span className="text-[11px] font-mono text-cyan-400 hidden sm:inline-block px-2">
+                {simResult.trioStats ? (
+                  <>🤖 RL: {simResult.rlStats?.successRate.toFixed(1) || 0}% | ⚡ AMI: {simResult.sigmaStats?.successRate.toFixed(1) || 0}% | 📐 Naïf: {simResult.naiveStats?.successRate.toFixed(1) || 0}%</>
+                ) : (
+                  <>⚡ SIGMA: {simResult.sigmaStats?.successRate.toFixed(1) || 0}% | 📐 Naïf: {simResult.naiveStats?.successRate.toFixed(1) || 0}%</>
+                )}
               </span>
             )}
           </div>

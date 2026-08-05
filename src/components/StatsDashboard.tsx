@@ -7,7 +7,7 @@ interface StatsDashboardProps {
 }
 
 export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
-  const { sigmaStats, naiveStats, pairedStats, executionTimeMs, config } = result;
+  const { sigmaStats, naiveStats, rlStats, pairedStats, trioStats, executionTimeMs, config } = result;
 
   return (
     <div className="space-y-6">
@@ -16,14 +16,26 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
         <div>
           <h2 className="text-base font-bold text-white flex items-center space-x-2">
             <Trophy className="w-5 h-5 text-amber-400" />
-            <span>Résultats de l'Expérimentation Monte-Carlo Appariée</span>
+            <span>Résultats de l'Expérimentation Monte-Carlo</span>
           </h2>
           <p className="text-xs text-slate-400">
             {config.numIterations} tirages stochastiques sous variabilité environnementale (Vent ±{config.sigmaWindSpeed || 4}kt, Direction ±{config.sigmaWindDirection || 15}°) | Calcul exécuté en {executionTimeMs.toFixed(0)} ms
           </p>
         </div>
 
-        {pairedStats && (
+        {trioStats && (
+          <div className="flex items-center space-x-3 bg-slate-900/90 border border-purple-500/40 rounded-lg px-4 py-2 text-xs">
+            <Zap className="w-4 h-4 text-purple-400 animate-pulse" />
+            <div>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Meilleure Stratégie du Trio :</span>
+              <span className="text-purple-300 font-extrabold text-sm">
+                {trioStats.bestStrategy === 'RL_MODEL' ? '🤖 Modèle RL / PPO' : trioStats.bestStrategy === 'SIGMA' ? '⚡ Algorithme SIGMA' : '📐 Râteau Naïf'}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {!trioStats && pairedStats && (
           <div className="flex items-center space-x-3 bg-slate-900/90 border border-emerald-500/40 rounded-lg px-4 py-2 text-xs">
             <Zap className="w-4 h-4 text-emerald-400 animate-pulse" />
             <div>
@@ -36,10 +48,32 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
         )}
       </div>
 
+      {/* Trio Comparison KPI Grid */}
+      {trioStats && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="glass-panel rounded-xl p-4 border-l-4 border-amber-500">
+            <div className="text-xs text-slate-400 font-semibold">1. Râteau Naïf (IAMSAR)</div>
+            <div className="text-2xl font-black text-amber-300 mt-1">{trioStats.naiveSuccessRate.toFixed(1)}%</div>
+            <div className="text-xs text-slate-400 mt-1">Victoires directes : {trioStats.naiveWins} runs</div>
+          </div>
+
+          <div className="glass-panel rounded-xl p-4 border-l-4 border-emerald-500">
+            <div className="text-xs text-slate-400 font-semibold">2. Algorithme Bayésien (SIGMA)</div>
+            <div className="text-2xl font-black text-emerald-300 mt-1">{trioStats.sigmaSuccessRate.toFixed(1)}%</div>
+            <div className="text-xs text-slate-400 mt-1">Victoires directes : {trioStats.sigmaWins} runs</div>
+          </div>
+
+          <div className="glass-panel rounded-xl p-4 border-l-4 border-purple-500">
+            <div className="text-xs text-slate-400 font-semibold">3. Modèle RL / PPO (Neurones)</div>
+            <div className="text-2xl font-black text-purple-300 mt-1">{trioStats.rlSuccessRate.toFixed(1)}%</div>
+            <div className="text-xs text-slate-400 mt-1">Victoires directes : {trioStats.rlWins} runs</div>
+          </div>
+        </div>
+      )}
+
       {/* Paired Comparison KPI Grid */}
-      {pairedStats && (
+      {!trioStats && pairedStats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* KPI 1: Win Rate */}
           <div className="glass-panel rounded-xl p-4 border-l-4 border-emerald-500">
             <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
               <span>Victoires Algorithme SIGMA</span>
@@ -53,7 +87,6 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
             </div>
           </div>
 
-          {/* KPI 2: Mean Time Saved */}
           <div className="glass-panel rounded-xl p-4 border-l-4 border-cyan-500">
             <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
               <span>Temps Moyen Gagné</span>
@@ -68,7 +101,6 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
             </div>
           </div>
 
-          {/* KPI 3: Fuel Saved */}
           <div className="glass-panel rounded-xl p-4 border-l-4 border-blue-500">
             <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
               <span>Économie de Carburant</span>
@@ -83,7 +115,6 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
             </div>
           </div>
 
-          {/* KPI 4: Bingo Failure Rate Comparison */}
           <div className="glass-panel rounded-xl p-4 border-l-4 border-rose-500">
             <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
               <span>Échecs Bingo Fuel</span>
@@ -103,7 +134,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
       <div className="glass-panel rounded-xl p-5 space-y-4">
         <h3 className="text-sm font-bold text-white flex items-center space-x-2">
           <TrendingUp className="w-4 h-4 text-cyan-400" />
-          <span>Tableau Comparatif Global (SIGMA vs Râteau Naïf)</span>
+          <span>Tableau Comparatif Global</span>
         </h3>
 
         <div className="overflow-x-auto">
@@ -118,6 +149,21 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
+              {rlStats && (
+                <tr className="hover:bg-slate-800/40 text-purple-300 font-semibold">
+                  <td className="py-3 px-3 flex items-center space-x-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block" />
+                    <span>Modèle RL / PPO (Réseau de Neurones)</span>
+                  </td>
+                  <td className="py-3 px-3 text-sm font-bold text-purple-400">
+                    {rlStats.successRate.toFixed(1)}%
+                  </td>
+                  <td className="py-3 px-3">{rlStats.meanInterceptionTime.toFixed(1)} min</td>
+                  <td className="py-3 px-3">{rlStats.meanFuelConsumed.toFixed(1)} min</td>
+                  <td className="py-3 px-3">{rlStats.bingoRate.toFixed(1)}%</td>
+                </tr>
+              )}
+
               {sigmaStats && (
                 <tr className="hover:bg-slate-800/40 text-emerald-300 font-semibold">
                   <td className="py-3 px-3 flex items-center space-x-2">

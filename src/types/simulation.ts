@@ -46,7 +46,7 @@ export interface ScenarioConfig {
   gridCellSize: number;      // Maille size in NM (default 0.5 NM)
   dt: number;                // Time step in minutes (default 1.0 min)
   numIterations: number;     // Monte-Carlo N
-  strategy: 'SIGMA' | 'NAIVE' | 'BOTH';
+  strategy: 'SIGMA' | 'NAIVE' | 'RL_MODEL' | 'BOTH' | 'TRIO';
 }
 
 export interface TargetState {
@@ -81,7 +81,7 @@ export type GridMode = 'CLASSICAL' | 'BAYESIAN_STANDARD' | 'BAYESIAN_EVOLVED';
 
 export interface MonteCarloRunResult {
   runId: number;
-  strategy: 'SIGMA' | 'NAIVE';
+  strategy: 'SIGMA' | 'NAIVE' | 'RL_MODEL';
   intercepted: boolean;
   interceptionTime: number; // minutes
   fuelConsumed: number;     // minutes
@@ -133,13 +133,27 @@ export interface PairedComparisonStats {
   meanFuelSavedMinutes: number;
 }
 
+export interface TrioComparisonStats {
+  naiveWins: number;
+  sigmaWins: number;
+  rlWins: number;
+  ties: number;
+  bestStrategy: 'NAIVE' | 'SIGMA' | 'RL_MODEL';
+  naiveSuccessRate: number;
+  sigmaSuccessRate: number;
+  rlSuccessRate: number;
+}
+
 export interface GlobalSimulationResult {
   config: ScenarioConfig;
   sigmaStats?: StrategyStats;
   naiveStats?: StrategyStats;
+  rlStats?: StrategyStats;
   pairedStats?: PairedComparisonStats;
+  trioStats?: TrioComparisonStats;
   sigmaRuns: MonteCarloRunResult[];
   naiveRuns: MonteCarloRunResult[];
+  rlRuns: MonteCarloRunResult[];
   executionTimeMs: number;
 }
 

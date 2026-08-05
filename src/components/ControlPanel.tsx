@@ -246,9 +246,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ config, onChange, di
               disabled={disabled}
               className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-slate-100 font-bold cursor-pointer"
             >
+              <option value="TRIO">🏆 COMPARATIF TRIO (Naïve vs AMI vs RL PPO)</option>
               <option value="BOTH">SIGMA vs NAÏVE (Apparié)</option>
-              <option value="SIGMA">Seul SIGMA (Bayésien)</option>
-              <option value="NAIVE">Seule Râteau Naïf</option>
+              <option value="RL_MODEL">🤖 Modèle RL / PPO (Réseau de Neurones)</option>
+              <option value="SIGMA">⚡ Seul SIGMA (AMI Bayésien)</option>
+              <option value="NAIVE">📐 Seul Râteau Naïf (IAMSAR)</option>
             </select>
           </div>
         </div>
