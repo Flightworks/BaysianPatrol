@@ -53,7 +53,9 @@ class SB3PolicyOnnxWrapper(nn.Module):
         features = self.policy.extract_features(obs)
         latent_pi = self.policy.mlp_extractor.forward_actor(features)
         action_mean = self.policy.action_net(latent_pi)
-        return torch.tanh(action_mean)
+        # PPO with a Box action space and squash_output=False clips deterministic
+        # actions to the environment bounds; it does not apply tanh.
+        return torch.clamp(action_mean, -1.0, 1.0)
 
 def export_onnx_model(zip_model_path=None, output_path=None):
     if output_path is None:

@@ -2,12 +2,16 @@ import os
 import sys
 import unittest
 
+import numpy as np
+import torch
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from baysian_patrol_env import BaysianPatrolEnv
 from hybrid_train import (
     fixed_evaluation_seeds, evaluate_callable, collect_expert_demonstrations,
-    choose_candidate_stage,
+    choose_candidate_stage, build_model,
 )
+from export_onnx import SB3PolicyOnnxWrapper
 
 
 class TestHybridTrainingContract(unittest.TestCase):
@@ -27,6 +31,20 @@ class TestHybridTrainingContract(unittest.TestCase):
         ppo = {'success_lcb95': 30.0, 'bingo_failures': 0, 'out_of_bounds': 0, 'mean_interception_time': 9.0}
         self.assertEqual(choose_candidate_stage(bc, ppo), 'bc')
         self.assertEqual(choose_candidate_stage(ppo, bc), 'ppo')
+
+    def test_onnx_wrapper_matches_sb3_clipped_deterministic_action(self):
+        env = BaysianPatrolEnv()
+        model = build_model(env, seed=99)
+        obs, _ = env.reset(seed=99)
+        with torch.no_grad():
+            model.policy.action_net.weight.zero_()
+            model.policy.action_net.bias.copy_(torch.tensor([2.0, -2.0]))
+            exported = SB3PolicyOnnxWrapper(model.policy)(
+                torch.from_numpy(obs['grid'][None]),
+                torch.from_numpy(obs['vector'][None]),
+            ).numpy()[0]
+        expected, _ = model.predict(obs, deterministic=True)
+        np.testing.assert_allclose(exported, expected, atol=1e-7)
 
     def test_demonstration_shapes_match_observation_and_action(self):
         data = collect_expert_demonstrations(episodes=2, seed=300)
