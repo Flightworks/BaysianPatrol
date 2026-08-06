@@ -20,12 +20,12 @@ import { normalizeAngle } from './random';
 /**
  * Executes a single Monte-Carlo simulation run for a given strategy and fixed realization.
  */
-export function runSingleSimulationWithRealization(
+export async function runSingleSimulationWithRealization(
   runId: number,
   strategy: 'SIGMA' | 'NAIVE' | 'RL_MODEL',
   config: ScenarioConfig,
   realization: RunRealizationParams
-): MonteCarloRunResult {
+): Promise<MonteCarloRunResult> {
   const {
     helicoEndurance, radarBaseRange,
     dt, meanHeading
@@ -57,6 +57,10 @@ export function runSingleSimulationWithRealization(
   const sigmaPlanner = strategy === 'SIGMA' ? new SIGMAPlanner(runConfig) : null;
   const naivePlanner = strategy === 'NAIVE' ? new NaivePlanner(runConfig) : null;
   const rlPlanner = strategy === 'RL_MODEL' ? new RLPlanner(runConfig) : null;
+
+  if (rlPlanner) {
+    await rlPlanner.init();
+  }
 
   const helicoPath: HelicoPathPoint[] = [];
   const heatmapSnapshots: Array<{
@@ -109,7 +113,7 @@ export function runSingleSimulationWithRealization(
     } else if (strategy === 'NAIVE') {
       helico = naivePlanner!.planStep(helico, t, dt);
     } else if (strategy === 'RL_MODEL') {
-      helico = rlPlanner!.planStep(helico, grid, t, dt);
+      helico = await rlPlanner!.planStepAsync(helico, grid, t, dt);
     }
 
     if (helico.status === 'BINGO_RETURN') {
@@ -393,10 +397,10 @@ export function computeTrioStats(
 /**
  * Runs complete Paired / Trio Monte-Carlo simulation suite with stochastic environmental and omnidirectional frigate sector variability.
  */
-export function runMonteCarloSuite(
+export async function runMonteCarloSuite(
   config: ScenarioConfig,
   onProgress?: (progressPercent: number) => void
-): GlobalSimulationResult {
+): Promise<GlobalSimulationResult> {
   const startTime = performance.now();
   const N = config.numIterations;
 
@@ -417,7 +421,7 @@ export function runMonteCarloSuite(
     const realization = targetSimHelper.getRealization();
 
     if (runSIGMA) {
-      sigmaRuns.push(runSingleSimulationWithRealization(k, 'SIGMA', config, realization));
+      sigmaRuns.push(await runSingleSimulationWithRealization(k, 'SIGMA', config, realization));
       completed++;
       if (onProgress && completed % 10 === 0) {
         onProgress((completed / totalTasks) * 100);
@@ -425,7 +429,7 @@ export function runMonteCarloSuite(
     }
 
     if (runNaive) {
-      naiveRuns.push(runSingleSimulationWithRealization(k, 'NAIVE', config, realization));
+      naiveRuns.push(await runSingleSimulationWithRealization(k, 'NAIVE', config, realization));
       completed++;
       if (onProgress && completed % 10 === 0) {
         onProgress((completed / totalTasks) * 100);
@@ -433,7 +437,7 @@ export function runMonteCarloSuite(
     }
 
     if (runRL) {
-      rlRuns.push(runSingleSimulationWithRealization(k, 'RL_MODEL', config, realization));
+      rlRuns.push(await runSingleSimulationWithRealization(k, 'RL_MODEL', config, realization));
       completed++;
       if (onProgress && completed % 10 === 0) {
         onProgress((completed / totalTasks) * 100);

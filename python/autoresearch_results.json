@@ -1,0 +1,211 @@
+{
+  "best_score": -503.1,
+  "best_params": {
+    "lr": 0.0001,
+    "r_det": 400.0,
+    "r_prob": 30.0,
+    "p_time": 0.05,
+    "p_bingo": 500.0,
+    "gamma": 0.99
+  },
+  "history": [
+    {
+      "experiment": 1,
+      "name": "PPO_AutoResearch_Exp_1",
+      "timestamp": "2026-08-05 21:27",
+      "score": -1281.0,
+      "mean_reward": -1387.8,
+      "success_rate": 35.0,
+      "mean_flight_length": 136.4,
+      "hyperparams": {
+        "lr": 0.0001,
+        "r_det": 400.0,
+        "r_prob": 20.0,
+        "p_time": 0.1,
+        "p_bingo": 500.0,
+        "gamma": 0.98
+      },
+      "status": "CHAMPION_KEPT"
+    },
+    {
+      "experiment": 2,
+      "name": "PPO_AutoResearch_Exp_2",
+      "timestamp": "2026-08-05 21:28",
+      "score": -589.8,
+      "mean_reward": -724.9,
+      "success_rate": 40.0,
+      "mean_flight_length": 129.9,
+      "hyperparams": {
+        "lr": 0.0001,
+        "r_det": 600.0,
+        "r_prob": 30.0,
+        "p_time": 0.1,
+        "p_bingo": 1500.0,
+        "gamma": 0.98
+      },
+      "status": "CHAMPION_KEPT"
+    },
+    {
+      "experiment": 1,
+      "name": "PPO_AutoResearch_Exp_1",
+      "timestamp": "2026-08-05 21:37",
+      "score": -803.2,
+      "mean_reward": -803.4,
+      "success_rate": 15.0,
+      "mean_flight_length": 149.6,
+      "hyperparams": {
+        "lr": 0.0001,
+        "r_det": 400.0,
+        "r_prob": 20.0,
+        "p_time": 0.05,
+        "p_bingo": 1500.0,
+        "gamma": 0.98
+      },
+      "status": "DISCARDED"
+    },
+    {
+      "experiment": 2,
+      "name": "PPO_AutoResearch_Exp_2",
+      "timestamp": "2026-08-05 21:41",
+      "score": -503.1,
+      "mean_reward": -619.1,
+      "success_rate": 35.0,
+      "mean_flight_length": 118.0,
+      "hyperparams": {
+        "lr": 0.0001,
+        "r_det": 400.0,
+        "r_prob": 30.0,
+        "p_time": 0.05,
+        "p_bingo": 500.0,
+        "gamma": 0.99
+      },
+      "status": "CHAMPION_KEPT"
+    },
+    {
+      "experiment": 3,
+      "name": "PPO_AutoResearch_Exp_3",
+      "timestamp": "2026-08-05 21:45",
+      "score": -1872.2,
+      "mean_reward": -1938.2,
+      "success_rate": 25.0,
+      "mean_flight_length": 118.2,
+      "hyperparams": {
+        "lr": 0.0005,
+        "r_det": 600.0,
+        "r_prob": 10.0,
+        "p_time": 0.1,
+        "p_bingo": 1500.0,
+        "gamma": 0.995
+      },
+      "status": "DISCARDED"
+    },
+    {
+      "experiment": 1,
+      "name": "PPO_AutoResearch_Exp_1",
+      "timestamp": "2026-08-05 21:53",
+      "score": -810.7,
+      "mean_reward": -809.7,
+      "success_rate": 15.0,
+      "mean_flight_length": 151.9,
+      "hyperparams": {
+        "lr": 0.0003,
+        "r_det": 800.0,
+        "r_prob": 20.0,
+        "p_time": 0.2,
+        "p_bingo": 1500.0,
+        "gamma": 0.995
+      },
+      "status": "DISCARDED"
+    },
+    {
+      "experiment": 2,
+      "name": "PPO_AutoResearch_Exp_2",
+      "timestamp": "2026-08-05 21:56",
+      "score": -1733.9,
+      "mean_reward": -1737.8,
+      "success_rate": 15.0,
+      "mean_flight_length": 142.2,
+      "hyperparams": {
+        "lr": 0.0003,
+        "r_det": 400.0,
+        "r_prob": 20.0,
+        "p_time": 0.2,
+        "p_bingo": 500.0,
+        "gamma": 0.98
+      },
+      "status": "DISCARDED"
+    },
+    {
+      "experiment": 3,
+      "name": "PPO_AutoResearch_Exp_3",
+      "timestamp": "2026-08-05 21:59",
+      "score": -911.3,
+      "mean_reward": -911.9,
+      "success_rate": 15.0,
+      "mean_flight_length": 148.8,
+      "hyperparams": {
+        "lr": 0.0003,
+        "r_det": 1200.0,
+        "r_prob": 5.0,
+        "p_time": 0.05,
+        "p_bingo": 500.0,
+        "gamma": 0.98
+      },
+      "status": "DISCARDED"
+    },
+    {
+      "experiment": 1,
+      "name": "PPO_AutoResearch_Exp_1",
+      "timestamp": "2026-08-05 22:29",
+      "score": -607.1,
+      "mean_reward": -659.4,
+      "success_rate": 25.0,
+      "mean_flight_length": 145.2,
+      "hyperparams": {
+        "lr": 0.0005,
+        "r_det": 600.0,
+        "r_prob": 10.0,
+        "p_time": 0.05,
+        "p_bingo": 500.0,
+        "gamma": 0.98
+      },
+      "status": "DISCARDED"
+    },
+    {
+      "experiment": 2,
+      "name": "PPO_AutoResearch_Exp_2",
+      "timestamp": "2026-08-05 22:34",
+      "score": -3503.9,
+      "mean_reward": -3489.0,
+      "success_rate": 10.0,
+      "mean_flight_length": 129.8,
+      "hyperparams": {
+        "lr": 0.001,
+        "r_det": 400.0,
+        "r_prob": 20.0,
+        "p_time": 0.1,
+        "p_bingo": 1000.0,
+        "gamma": 0.99
+      },
+      "status": "DISCARDED"
+    },
+    {
+      "experiment": 3,
+      "name": "PPO_AutoResearch_Exp_3",
+      "timestamp": "2026-08-05 22:37",
+      "score": -1694.6,
+      "mean_reward": -1819.7,
+      "success_rate": 35.0,
+      "mean_flight_length": 99.8,
+      "hyperparams": {
+        "lr": 0.0005,
+        "r_det": 400.0,
+        "r_prob": 5.0,
+        "p_time": 0.2,
+        "p_bingo": 500.0,
+        "gamma": 0.99
+      },
+      "status": "DISCARDED"
+    }
+  ]
+}

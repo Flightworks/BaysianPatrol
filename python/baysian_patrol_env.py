@@ -20,7 +20,11 @@ class BaysianPatrolEnv(gym.Env):
         max_endurance: float = 180.0,  # minutes
         helico_max_speed: float = 140.0,  # knots
         radar_base_range: float = 15.0,  # NM
-        max_turn_rate_deg_min: float = 180.0,  # 3 deg/sec = 180 deg/min
+        max_turn_rate_deg_min: float = 180.0,  # 180 deg/min
+        reward_detection: float = 500.0,
+        reward_exploration: float = 10.0,
+        penalty_time: float = 0.1,
+        penalty_bingo: float = 1000.0,
     ):
         super().__init__()
 
@@ -31,7 +35,15 @@ class BaysianPatrolEnv(gym.Env):
         self.max_endurance = max_endurance
         self.helico_max_speed = helico_max_speed
         self.radar_base_range = radar_base_range
-        self.max_turn_rate_rad_step = math.radians(max_turn_rate_deg_min) * (dt / 60.0)
+        
+        # Correct max turn rate per step (180 deg/min * dt)
+        self.max_turn_rate_rad_step = math.radians(max_turn_rate_deg_min) * dt
+        
+        # Adjustable Reward Parameters
+        self.reward_detection = reward_detection
+        self.reward_exploration = reward_exploration
+        self.penalty_time = penalty_time
+        self.penalty_bingo = penalty_bingo
 
         # Observation Space:
         # 1. 'grid': (2, grid_dim, grid_dim) -> Channel 0: Bayesian P(x,y,t), Channel 1: Scanned mask (0..1)
@@ -52,33 +64,33 @@ class BaysianPatrolEnv(gym.Env):
         self._reset_state()
 
     def _reset_state(self):
-        # Initial frigate position (center-south of search area)
-        self.frigate_x = 0.0
-        self.frigate_y = -self.search_area_height * 0.4
+        # Randomize Frigate position anywhere in search area
+        self.frigate_x = np.random.uniform(-0.35 * self.search_area_width, 0.35 * self.search_area_width)
+        self.frigate_y = np.random.uniform(-0.35 * self.search_area_height, 0.35 * self.search_area_height)
 
-        # Initial target Datum (center with uncertainty)
-        datum_x = np.random.normal(0.0, 5.0)
-        datum_y = np.random.normal(0.0, 5.0)
-        self.target_x = datum_x
-        self.target_y = datum_y
-        self.target_speed = np.random.normal(12.0, 2.0)  # kts
+        # Randomize target Datum position anywhere in search area
+        self.datum_x = np.random.uniform(-0.35 * self.search_area_width, 0.35 * self.search_area_width)
+        self.datum_y = np.random.uniform(-0.35 * self.search_area_height, 0.35 * self.search_area_height)
+
+        self.target_x = self.datum_x + np.random.normal(0.0, 2.0)
+        self.target_y = self.datum_y + np.random.normal(0.0, 2.0)
+        self.target_speed = np.random.uniform(8.0, 22.0)  # kts
         self.target_heading = np.random.uniform(0, 2 * math.pi)
 
-        # Helicopter state
+        # Helicopter initial state at frigate with random initial heading
         self.helico_x = self.frigate_x
         self.helico_y = self.frigate_y
-        self.helico_heading = math.atan2(0.0 - self.helico_x, 0.0 - self.helico_y)
-        self.helico_speed = self.helico_max_speed * 0.8
+        self.helico_heading = np.random.uniform(0, 2 * math.pi)
+        self.helico_speed = 100.0
         self.fuel_remaining = self.max_endurance
         self.t = 0.0
 
         # Environmental wind
         self.wind_speed = np.random.uniform(5.0, 25.0)
-        self.wind_direction = np.random.uniform(0, 2 * math.pi)
-        self.wind_x = self.wind_speed * math.sin(self.wind_direction)
-        self.wind_y = self.wind_speed * math.cos(self.wind_direction)
+        self.wind_dir = np.random.uniform(0, 360.0)
 
-        # Bayesian Grid
+        # Grid setup
+        self.grid_dim = 32
         self.grid_p = np.zeros((self.grid_dim, self.grid_dim), dtype=np.float32)
         self.grid_scanned = np.zeros((self.grid_dim, self.grid_dim), dtype=np.float32)
 
@@ -86,7 +98,7 @@ class BaysianPatrolEnv(gym.Env):
         xs = np.linspace(-self.search_area_width / 2, self.search_area_width / 2, self.grid_dim)
         ys = np.linspace(-self.search_area_height / 2, self.search_area_height / 2, self.grid_dim)
         xx, yy = np.meshgrid(xs, ys)
-        dist_sq = (xx - datum_x) ** 2 + (yy - datum_y) ** 2
+        dist_sq = (xx - self.datum_x) ** 2 + (yy - self.datum_y) ** 2
         self.grid_p = np.exp(-dist_sq / (2 * (15.0 ** 2)))
         self.grid_p /= np.sum(self.grid_p) + 1e-8
 
@@ -111,8 +123,9 @@ class BaysianPatrolEnv(gym.Env):
         dist_frigate = math.hypot(self.helico_x - self.frigate_x, self.helico_y - self.frigate_y)
         dist_frigate_norm = dist_frigate / self.search_area_width
 
-        wind_x_norm = self.wind_x / 50.0
-        wind_y_norm = self.wind_y / 50.0
+        wind_rad = math.radians(self.wind_dir)
+        wind_x_norm = (self.wind_speed * math.sin(wind_rad)) / 50.0
+        wind_y_norm = (self.wind_speed * math.cos(wind_rad)) / 50.0
         radar_norm = self.radar_base_range / 30.0
 
         vector_obs = np.array(
@@ -138,6 +151,9 @@ class BaysianPatrolEnv(gym.Env):
         delta_heading_req = action[0] * self.max_turn_rate_rad_step
         delta_speed_req = action[1] * (20.0 * self.dt / 60.0)
 
+        prev_helico_x = self.helico_x
+        prev_helico_y = self.helico_y
+
         # Update helicopter heading & speed
         self.helico_heading = (self.helico_heading + delta_heading_req) % (2 * math.pi)
         self.helico_speed = np.clip(self.helico_speed + delta_speed_req, 60.0, self.helico_max_speed)
@@ -155,6 +171,20 @@ class BaysianPatrolEnv(gym.Env):
         self.fuel_remaining -= self.dt
         self.t += self.dt
 
+        # Find current peak probability cell location
+        xs = np.linspace(-self.search_area_width / 2, self.search_area_width / 2, self.grid_dim)
+        ys = np.linspace(-self.search_area_height / 2, self.search_area_height / 2, self.grid_dim)
+        unscanned_p = self.grid_p * (1.0 - self.grid_scanned)
+        if np.max(unscanned_p) > 0:
+            peak_j, peak_i = np.unravel_index(np.argmax(unscanned_p), unscanned_p.shape)
+            peak_x, peak_y = xs[peak_i], ys[peak_j]
+        else:
+            peak_x, peak_y = 0.0, 0.0
+
+        prev_dist_to_peak = math.hypot(peak_x - prev_helico_x, peak_y - prev_helico_y)
+        curr_dist_to_peak = math.hypot(peak_x - self.helico_x, peak_y - self.helico_y)
+        dist_progress_reward = 5.0 * (prev_dist_to_peak - curr_dist_to_peak)
+
         # Check distance to target
         dist_to_target = math.hypot(self.target_x - self.helico_x, self.target_y - self.helico_y)
 
@@ -165,49 +195,53 @@ class BaysianPatrolEnv(gym.Env):
             rel_range = dist_to_target / self.radar_base_range
             p_det = max(0.0, 0.98 * (1.0 - (rel_range ** 2)))
 
-        # Update grid scanning
+        # Dynamic Target Prior Distribution Drift (moving probability center over time)
+        drift_x = self.datum_x + (self.target_speed / 60.0) * self.t * math.sin(self.target_heading)
+        drift_y = self.datum_y + (self.target_speed / 60.0) * self.t * math.cos(self.target_heading)
+        xx, yy = np.meshgrid(xs, ys)
+        grid_p_unnorm = np.exp(-0.5 * (((xx - drift_x)**2) / 25.0 + ((yy - drift_y)**2) / 25.0))
+        self.grid_p = grid_p_unnorm / np.sum(grid_p_unnorm)
+
+        # Temporal Memory Relaxation on scanned mask (targets drift, so unscanned uncertainty flows back)
+        decay_rate = math.exp((-math.log(2) / 20.0) * self.dt)
+        self.grid_scanned *= decay_rate
+
+        # Update grid scanning near helicopter
         prev_p_sum = np.sum(self.grid_p * self.grid_scanned)
         
-        # Mark cells scanned near helicopter
-        xs = np.linspace(-self.search_area_width / 2, self.search_area_width / 2, self.grid_dim)
-        ys = np.linspace(-self.search_area_height / 2, self.search_area_height / 2, self.grid_dim)
-        xx, yy = np.meshgrid(xs, ys)
         dists_to_helico = np.hypot(xx - self.helico_x, yy - self.helico_y)
-
         scanned_now = (dists_to_helico <= self.radar_base_range).astype(np.float32)
         self.grid_scanned = np.maximum(self.grid_scanned, scanned_now)
 
         new_p_sum = np.sum(self.grid_p * self.grid_scanned)
-        prob_scanned_gain = new_p_sum - prev_p_sum
+        prob_scanned_gain = max(0.0, new_p_sum - prev_p_sum)
 
+        # Calculate rewards
+        reward = -self.penalty_time * self.dt  # Time penalty
+        reward += self.reward_exploration * prob_scanned_gain  # Information gain
+        reward += dist_progress_reward  # Directional progress towards density peak
+        
         # Calculate Bingo Distance & Margin
         dist_to_frigate = math.hypot(self.helico_x - self.frigate_x, self.helico_y - self.frigate_y)
         time_to_frigate = (dist_to_frigate / self.helico_max_speed) * 60.0  # in minutes
         bingo_buffer = 15.0  # minutes reserve
 
         # Rewards & Termination logic
-        reward = 0.0
         terminated = False
         truncated = False
 
-        # 1. Step time penalty
-        reward -= 0.1 * self.dt
-
-        # 2. Probability gain reward
-        reward += 10.0 * prob_scanned_gain
-
-        # 3. Check Target Detection
+        # Check Target Detection
         if dist_to_target < 0.8 or (p_det > 0.05 and np.random.random() < p_det):
             self.intercepted = True
-            reward += 500.0
+            reward += self.reward_detection
             terminated = True
 
-        # 4. Check Bingo Fuel Safety
+        # Check Bingo Fuel Safety
         if self.fuel_remaining < (time_to_frigate + bingo_buffer):
             # Helicopter crossed Bingo Fuel limit
             if self.fuel_remaining < time_to_frigate:
                 # Out of fuel before frigate!
-                reward -= 1000.0
+                reward -= self.penalty_bingo
                 self.bingo_failed = True
                 terminated = True
             else:

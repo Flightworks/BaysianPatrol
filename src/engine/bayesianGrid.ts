@@ -192,18 +192,29 @@ export class BayesianGrid {
   /**
    * Apply Bayesian Update upon radar scan from helicopter position (hx, hy) heading helicoHeadingDeg.
    * Calculates BOTH Standard Bayesian clearance and Evolved Perpendicular-Approach clearance continuously.
+   * Includes temporal memory relaxation (targets move, so probability flows back to previously scanned areas).
    */
   public updateBayesianScan(
     hx: number,
     hy: number,
     helicoHeadingDeg: number,
-    radarParams: RadarParams
+    radarParams: RadarParams,
+    dtMinutes: number = 1.0,
+    memoryHalfLifeMinutes: number = 20.0
   ): void {
-    let idx = 0;
+    const { meanHeading } = this.config;
     const rMax = radarParams.baseRange * 1.4;
-    const targetHeading = this.config.meanHeading;
+    let idx = 0;
 
-    const aspectApproachRad = degToRad(normalizeAngle(helicoHeadingDeg - targetHeading));
+    // Temporal Memory Decay: Scanned areas relax back towards 1.0 (unscanned state) over time
+    const decayFactor = Math.exp((-Math.LN2 / memoryHalfLifeMinutes) * dtMinutes);
+    for (let i = 0; i < this.clearanceStandard.length; i++) {
+      this.clearanceStandard[i] = 1.0 - (1.0 - this.clearanceStandard[i]) * decayFactor;
+      this.clearanceEvolved[i] = 1.0 - (1.0 - this.clearanceEvolved[i]) * decayFactor;
+    }
+
+    // Aspect angle multiplier
+    const aspectApproachRad = degToRad(normalizeAngle(helicoHeadingDeg - meanHeading));
     const perpApproachMultiplier = 0.70 + 0.50 * Math.abs(Math.sin(aspectApproachRad));
 
     for (let j = 0; j < this.heightCells; j++) {
@@ -218,7 +229,7 @@ export class BayesianGrid {
             const bearingRad = Math.atan2(dx, dy);
             const bearingDeg = normalizeAngle((bearingRad * 180.0) / Math.PI);
 
-            const pDetBase = calculatePdet(dist, bearingDeg, targetHeading, radarParams);
+            const pDetBase = calculatePdet(dist, bearingDeg, meanHeading, radarParams);
             cell.pDet = pDetBase;
 
             if (pDetBase > 0) {

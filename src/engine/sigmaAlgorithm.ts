@@ -168,7 +168,7 @@ export class SIGMAPlanner {
       for (let j = 0; j < grid.heightCells; j++) {
         for (let i = 0; i < grid.widthCells; i++) {
           const cell = grid.cells[j][i];
-          if (cell.scanned || cell.pPresence < 0.0001) continue;
+          if (cell.scanned || cell.pBayesianEvolved < 0.00001) continue;
 
           // Bearing from helicopter to cell
           const bearingRad = Math.atan2(cell.x - helico.x, cell.y - helico.y);
@@ -178,8 +178,8 @@ export class SIGMAPlanner {
           const aspectRad = degToRad(normalizeAngle(bearingDeg - meanHeading));
           const perpFactor = Math.abs(Math.sin(aspectRad));
 
-          // Tactical Score: P_posterior * PerpendicularApproachBonus
-          const score = cell.pPresence * (0.6 + 0.4 * perpFactor);
+          // Tactical Score: P_BayesianEvolved * PerpendicularApproachBonus
+          const score = cell.pBayesianEvolved * (0.6 + 0.4 * perpFactor);
 
           if (score > maxScore) {
             maxScore = score;

@@ -43,7 +43,7 @@ export const PRESETS: Preset[] = [
       gridCellSize: 0.5,
       dt: 1.0,
       numIterations: 250,
-      strategy: 'BOTH',
+      strategy: 'TRIO',
     },
   },
   {
@@ -81,7 +81,7 @@ export const PRESETS: Preset[] = [
       gridCellSize: 0.5,
       dt: 1.0,
       numIterations: 300,
-      strategy: 'BOTH',
+      strategy: 'TRIO',
     },
   },
   {
@@ -119,7 +119,7 @@ export const PRESETS: Preset[] = [
       gridCellSize: 0.5,
       dt: 1.0,
       numIterations: 350,
-      strategy: 'BOTH',
+      strategy: 'TRIO',
     },
   },
   {
@@ -157,7 +157,7 @@ export const PRESETS: Preset[] = [
       gridCellSize: 0.5,
       dt: 1.0,
       numIterations: 250,
-      strategy: 'BOTH',
+      strategy: 'TRIO',
     },
   },
 ];

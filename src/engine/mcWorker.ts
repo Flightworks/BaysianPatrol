@@ -1,11 +1,11 @@
 import type { ScenarioConfig } from '../types/simulation';
 import { runMonteCarloSuite } from './simulator';
 
-self.onmessage = (e: MessageEvent) => {
+self.onmessage = async (e: MessageEvent) => {
   const { config } = e.data as { config: ScenarioConfig };
 
   try {
-    const result = runMonteCarloSuite(config, (progressPercent: number) => {
+    const result = await runMonteCarloSuite(config, (progressPercent: number) => {
       self.postMessage({
         type: 'PROGRESS',
         progress: progressPercent,

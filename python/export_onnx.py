@@ -1,39 +1,35 @@
 import os
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 class BaysianPatrolPolicyNetwork(nn.Module):
     """
-    CNN + MLP Policy Network for Bayesian Patrol RL.
+    CNN + MLP Policy Network for Bayesian Patrol RL (Fallback).
     Convolves the 2D P(x,y,t) + Scanned grid map and combines it with the scalar aircraft state.
     """
     def __init__(self, grid_dim=32, vector_dim=10, action_dim=2):
         super().__init__()
 
-        # CNN Branch for Grid (2, 32, 32)
         self.conv = nn.Sequential(
-            nn.Conv2d(2, 16, kernel_size=3, stride=2, padding=1), # -> (16, 16, 16)
+            nn.Conv2d(2, 16, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1), # -> (32, 8, 8)
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1), # -> (64, 4, 4)
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Flatten(), # 64 * 4 * 4 = 1024
+            nn.Flatten(),
         )
 
-        # MLP Branch for Vector (10)
         self.mlp_vec = nn.Sequential(
             nn.Linear(vector_dim, 64),
             nn.ReLU(),
         )
 
-        # Combined Fusion Head
         self.head = nn.Sequential(
             nn.Linear(1024 + 64, 128),
             nn.ReLU(),
             nn.Linear(128, action_dim),
-            nn.Tanh() # Continuous action [-1, 1]
+            nn.Tanh()
         )
 
     def forward(self, grid, vector):
@@ -43,10 +39,48 @@ class BaysianPatrolPolicyNetwork(nn.Module):
         action = self.head(fusion)
         return action
 
-def export_onnx_model(output_path=None):
+class SB3PolicyOnnxWrapper(nn.Module):
+    """
+    ONNX Wrapper around a trained Stable-Baselines3 MultiInputActorCriticPolicy.
+    Exports the trained neural network actor policy.
+    """
+    def __init__(self, policy):
+        super().__init__()
+        self.policy = policy
+
+    def forward(self, grid, vector):
+        obs = {"grid": grid, "vector": vector}
+        features = self.policy.extract_features(obs)
+        latent_pi = self.policy.mlp_extractor.forward_actor(features)
+        action_mean = self.policy.action_net(latent_pi)
+        return torch.tanh(action_mean)
+
+def export_onnx_model(zip_model_path=None, output_path=None):
     if output_path is None:
         output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "public", "models", "baysian_patrol_policy.onnx"))
-    model = BaysianPatrolPolicyNetwork()
+
+    model = None
+
+    # Check if a trained Stable-Baselines3 .zip model exists
+    if zip_model_path is None:
+        default_zip = os.path.abspath(os.path.join(os.path.dirname(__file__), "models", "ppo_baysian_patrol.zip"))
+        if os.path.exists(default_zip):
+            zip_model_path = default_zip
+
+    if zip_model_path and os.path.exists(zip_model_path):
+        try:
+            from stable_baselines3 import PPO
+            print(f"Chargement des poids entraînés depuis : {zip_model_path}...")
+            sb3_model = PPO.load(zip_model_path)
+            model = SB3PolicyOnnxWrapper(sb3_model.policy)
+            print("Poids du réseau de neurones PPO extraits avec succès.")
+        except Exception as e:
+            print(f"Attention: Impossible de charger {zip_model_path} ({e}). Utilisation du modèle de secours.")
+
+    if model is None:
+        print("Création du réseau de neurones de secours...")
+        model = BaysianPatrolPolicyNetwork()
+
     model.eval()
 
     dummy_grid = torch.randn(1, 2, 32, 32, dtype=torch.float32)
@@ -70,7 +104,7 @@ def export_onnx_model(output_path=None):
         },
         dynamo=False
     )
-    print(f"Modèle ONNX exporté avec succès dans : {os.path.abspath(output_path)}")
+    print(f"Modèle ONNX entraîné exporté avec succès dans : {os.path.abspath(output_path)}")
 
 if __name__ == "__main__":
     export_onnx_model()

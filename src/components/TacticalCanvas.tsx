@@ -7,6 +7,7 @@ interface TacticalCanvasProps {
   config: ScenarioConfig;
   selectedSigmaRun?: MonteCarloRunResult | null;
   selectedNaiveRun?: MonteCarloRunResult | null;
+  selectedRlRun?: MonteCarloRunResult | null;
   currentPlaybackTime: number; // minutes
   showTargetGroundTruth: boolean;
   onToggleGroundTruth: () => void;
@@ -19,6 +20,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
   config,
   selectedSigmaRun,
   selectedNaiveRun,
+  selectedRlRun,
   currentPlaybackTime,
   showTargetGroundTruth,
   onToggleGroundTruth,
@@ -78,7 +80,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
     const nmToPxY = (nmY: number) => centerY - nmY * baseScale;
 
     // Primary run used for grid heatmaps
-    const activeSnapshotRun = selectedSigmaRun || selectedNaiveRun;
+    const activeSnapshotRun = selectedSigmaRun || selectedNaiveRun || selectedRlRun;
     const activeEnv = activeSnapshotRun?.runEnv || config;
 
     // 1. Draw Coordinate Grid Lines (Every 5 NM)
@@ -301,6 +303,60 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
         ctx.fillStyle = '#d1fae5';
         ctx.font = 'bold 11px sans-serif';
         ctx.fillText(`HÉLICO SIGMA (${currentSigma.status})`, sigmaPxX + 10, sigmaPxY - 8);
+      }
+    }
+
+    // B2. RL MODEL TRAJECTORY (Neural Network Policy - Purple / Magenta)
+    if (selectedRlRun) {
+      const hPointsRl = selectedRlRun.helicoPath.filter(p => p.t <= currentPlaybackTime);
+      if (hPointsRl.length > 0) {
+        ctx.lineWidth = 3.0;
+        ctx.strokeStyle = '#a855f7';
+        ctx.beginPath();
+        ctx.moveTo(nmToPxX(hPointsRl[0].x), nmToPxY(hPointsRl[0].y));
+        for (let p = 1; p < hPointsRl.length; p++) {
+          ctx.lineTo(nmToPxX(hPointsRl[p].x), nmToPxY(hPointsRl[p].y));
+        }
+        ctx.stroke();
+
+        const currentRl = hPointsRl[hPointsRl.length - 1];
+        const rlPxX = nmToPxX(currentRl.x);
+        const rlPxY = nmToPxY(currentRl.y);
+
+        const contour = getRadarFootprintContour(config.meanHeading, {
+          baseRange: config.radarBaseRange,
+          windSpeed: activeEnv.windSpeed ?? config.windSpeed,
+          windDirection: activeEnv.windDirection ?? config.windDirection,
+        }, 36);
+
+        ctx.save();
+        ctx.beginPath();
+        if (contour.length > 0) {
+          ctx.moveTo(nmToPxX(currentRl.x + contour[0].dx), nmToPxY(currentRl.y + contour[0].dy));
+          for (let p = 1; p < contour.length; p++) {
+            ctx.lineTo(nmToPxX(currentRl.x + contour[p].dx), nmToPxY(currentRl.y + contour[p].dy));
+          }
+        }
+        ctx.closePath();
+
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.18)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = '#a855f7';
+        ctx.beginPath();
+        ctx.arc(rlPxX, rlPxY, 6.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#f3e8ff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(`HÉLICO RL (PPO) (${currentRl.status})`, rlPxX + 10, rlPxY + 4);
       }
     }
 
