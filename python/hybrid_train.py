@@ -58,6 +58,22 @@ def wilson_lower_bound(successes: int, trials: int, z: float = 1.96) -> float:
     return (centre-margin)/denominator*100.0
 
 
+def candidate_key(stats: dict) -> tuple:
+    """Hard safety first, then Wilson success bound and interception time."""
+    mean_time = stats.get("mean_interception_time")
+    time_value = float(mean_time) if mean_time is not None else float("inf")
+    return (
+        -int(stats.get("bingo_failures", 0)),
+        -int(stats.get("out_of_bounds", 0)),
+        float(stats.get("success_lcb95", 0.0)),
+        -time_value,
+    )
+
+
+def choose_candidate_stage(bc_stats: dict, ppo_stats: dict) -> str:
+    return "bc" if candidate_key(bc_stats) >= candidate_key(ppo_stats) else "ppo"
+
+
 def evaluate_callable(policy: Callable, seeds: Sequence[int], curriculum_level: int = 4) -> dict:
     outcomes: list[str] = []
     interception_times: list[float] = []
@@ -188,6 +204,11 @@ def train_hybrid(demo_episodes: int = 500, bc_epochs: int = 20, ppo_steps_per_le
     model = build_model(initial_vec, seed)
     demonstrations = collect_expert_demonstrations(demo_episodes, seed=10_000)
     losses = behavior_clone(model, demonstrations, bc_epochs, seed=seed)
+    models_dir = os.path.join(ROOT, "models")
+    public_dir = os.path.abspath(os.path.join(ROOT, "..", "public", "models"))
+    os.makedirs(models_dir, exist_ok=True); os.makedirs(public_dir, exist_ok=True)
+    bc_checkpoint = os.path.join(models_dir, "BC_CHECKPOINT_V231")
+    model.save(bc_checkpoint)
     validation_seeds = fixed_evaluation_seeds(150_000, min(100, eval_episodes))
     bc_stats = evaluate_callable(model_policy(model), validation_seeds)
     initial_vec.close()
@@ -200,22 +221,26 @@ def train_hybrid(demo_episodes: int = 500, bc_epochs: int = 20, ppo_steps_per_le
 
     test_seeds = fixed_evaluation_seeds(200_000, eval_episodes)
     ppo_stats = evaluate_callable(model_policy(model), test_seeds)
+    bc_model = PPO.load(bc_checkpoint+".zip")
+    bc_test_stats = evaluate_callable(model_policy(bc_model), test_seeds)
     expert_stats = evaluate_callable(lambda env, obs: env.expert_action(), test_seeds)
-    models_dir = os.path.join(ROOT, "models")
-    public_dir = os.path.abspath(os.path.join(ROOT, "..", "public", "models"))
-    os.makedirs(models_dir, exist_ok=True); os.makedirs(public_dir, exist_ok=True)
+    selected_stage = choose_candidate_stage(bc_test_stats, ppo_stats)
+    selected_model = bc_model if selected_stage == "bc" else model
+    selected_stats = bc_test_stats if selected_stage == "bc" else ppo_stats
     candidate = os.path.join(models_dir, "PPO_CANDIDATE_V231")
-    model.save(candidate)
+    selected_model.save(candidate)
     onnx_path = os.path.join(public_dir, "PPO_CANDIDATE_V231.onnx")
     export_onnx_model(candidate+".zip", onnx_path)
     report = {
         "version": "2.3.1-candidate", "seed": seed,
         "demonstration_transitions": len(demonstrations["action"]),
         "bc_final_loss": losses[-1], "bc_validation": bc_stats,
-        "ppo_test": ppo_stats, "expert_test": expert_stats,
+        "bc_test": bc_test_stats, "ppo_test": ppo_stats,
+        "selected_stage": selected_stage, "selected_test": selected_stats,
+        "expert_test": expert_stats,
         "promotion_eligible": (
-            ppo_stats["bingo_failures"] == 0 and ppo_stats["out_of_bounds"] == 0
-            and ppo_stats["success_lcb95"] >= expert_stats["success_lcb95"]-2.0
+            selected_stats["bingo_failures"] == 0 and selected_stats["out_of_bounds"] == 0
+            and selected_stats["success_lcb95"] >= expert_stats["success_lcb95"]-2.0
         ),
         "candidate_zip": candidate+".zip", "candidate_onnx": onnx_path,
     }

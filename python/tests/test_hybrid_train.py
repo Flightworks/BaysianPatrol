@@ -4,7 +4,10 @@ import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from baysian_patrol_env import BaysianPatrolEnv
-from hybrid_train import fixed_evaluation_seeds, evaluate_callable, collect_expert_demonstrations
+from hybrid_train import (
+    fixed_evaluation_seeds, evaluate_callable, collect_expert_demonstrations,
+    choose_candidate_stage,
+)
 
 
 class TestHybridTrainingContract(unittest.TestCase):
@@ -18,6 +21,12 @@ class TestHybridTrainingContract(unittest.TestCase):
         self.assertEqual(stats['bingo_failures'], 0)
         self.assertEqual(stats['out_of_bounds'], 0)
         self.assertEqual(stats['successes'] + stats['safe_returns'], 3)
+
+    def test_candidate_selection_keeps_safer_better_bc_stage(self):
+        bc = {'success_lcb95': 90.0, 'bingo_failures': 0, 'out_of_bounds': 0, 'mean_interception_time': 12.0}
+        ppo = {'success_lcb95': 30.0, 'bingo_failures': 0, 'out_of_bounds': 0, 'mean_interception_time': 9.0}
+        self.assertEqual(choose_candidate_stage(bc, ppo), 'bc')
+        self.assertEqual(choose_candidate_stage(ppo, bc), 'ppo')
 
     def test_demonstration_shapes_match_observation_and_action(self):
         data = collect_expert_demonstrations(episodes=2, seed=300)
