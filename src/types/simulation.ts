@@ -46,6 +46,7 @@ export interface ScenarioConfig {
   gridCellSize: number;      // Maille size in NM (default 0.5 NM)
   dt: number;                // Time step in minutes (default 1.0 min)
   numIterations: number;     // Monte-Carlo N
+  monteCarloSeed?: number;   // deterministic paired-run seed (default 2026)
   strategy: 'SIGMA' | 'NAIVE' | 'RL_MODEL' | 'BOTH' | 'TRIO';
 }
 
@@ -56,7 +57,7 @@ export interface TargetState {
   heading: number;
 }
 
-export type HelicopterStatus = 'SEARCHING' | 'INTERCEPTED' | 'BINGO_RETURN' | 'OUT_OF_FUEL';
+export type HelicopterStatus = 'SEARCHING' | 'INTERCEPTED' | 'BINGO_RETURN' | 'SAFE_RTB' | 'OUT_OF_FUEL';
 
 export interface HelicopterState {
   x: number;
@@ -86,7 +87,10 @@ export interface MonteCarloRunResult {
   intercepted: boolean;
   interceptionTime: number; // minutes
   fuelConsumed: number;     // minutes
-  bingoTriggered: boolean;
+  bingoTriggered: boolean;  // true only for an unsafe fuel violation
+  safeReturn: boolean;
+  outOfBounds: boolean;
+  outcome: 'INTERCEPTED' | 'SAFE_RTB' | 'BINGO_VIOLATION' | 'OUT_OF_BOUNDS' | 'OUT_OF_FUEL' | 'TIME_LIMIT';
   targetPath: PathPoint[];
   helicoPath: HelicoPathPoint[];
   interceptPoint: { x: number; y: number } | null;
@@ -120,7 +124,9 @@ export interface StrategyStats {
   meanInterceptionTime: number; // minutes
   meanFuelConsumed: number;   // minutes
   bingoCount: number;
-  bingoRate: number;          // percentage
+  bingoRate: number;          // unsafe violations only
+  safeReturnCount: number;
+  safeReturnRate: number;
   timeHistogram: Array<{ timeBin: number; count: number }>;
   cumulativeProb: Array<{ t: number; prob: number }>;
 }

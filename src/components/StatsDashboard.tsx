@@ -145,7 +145,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
                 <th className="py-2.5 px-3">Taux Détection (%)</th>
                 <th className="py-2.5 px-3">Temps Moyen (min)</th>
                 <th className="py-2.5 px-3">Conso. Carburant (min)</th>
-                <th className="py-2.5 px-3">Retours Bingo (%)</th>
+                <th className="py-2.5 px-3">Retours sûrs (%)</th>
+                <th className="py-2.5 px-3">Violations Bingo (%)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -160,6 +161,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
                   </td>
                   <td className="py-3 px-3">{rlStats.meanInterceptionTime.toFixed(1)} min</td>
                   <td className="py-3 px-3">{rlStats.meanFuelConsumed.toFixed(1)} min</td>
+                  <td className="py-3 px-3">{rlStats.safeReturnRate.toFixed(1)}%</td>
                   <td className="py-3 px-3">{rlStats.bingoRate.toFixed(1)}%</td>
                 </tr>
               )}
@@ -175,6 +177,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
                   </td>
                   <td className="py-3 px-3">{sigmaStats.meanInterceptionTime.toFixed(1)} min</td>
                   <td className="py-3 px-3">{sigmaStats.meanFuelConsumed.toFixed(1)} min</td>
+                  <td className="py-3 px-3">{sigmaStats.safeReturnRate.toFixed(1)}%</td>
                   <td className="py-3 px-3">{sigmaStats.bingoRate.toFixed(1)}%</td>
                 </tr>
               )}
@@ -190,6 +193,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
                   </td>
                   <td className="py-3 px-3">{naiveStats.meanInterceptionTime.toFixed(1)} min</td>
                   <td className="py-3 px-3">{naiveStats.meanFuelConsumed.toFixed(1)} min</td>
+                  <td className="py-3 px-3">{naiveStats.safeReturnRate.toFixed(1)}%</td>
                   <td className="py-3 px-3">{naiveStats.bingoRate.toFixed(1)}%</td>
                 </tr>
               )}

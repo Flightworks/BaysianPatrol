@@ -15,7 +15,7 @@ import { NaivePlanner } from './naiveAlgorithm';
 import { RLPlanner } from './rlAlgorithm';
 import { calculatePdet } from './radarModel';
 import type { RadarParams } from './radarModel';
-import { normalizeAngle } from './random';
+import { normalizeAngle, SeededRandom } from './random';
 
 /**
  * Executes a single Monte-Carlo simulation run for a given strategy and fixed realization.
@@ -32,6 +32,7 @@ export async function runSingleSimulationWithRealization(
   } = config;
 
   const targetSim = new TargetSim(config, realization);
+  const detectionRng = new SeededRandom(realization.seed ^ 0x51f15e);
   
   const runConfig: ScenarioConfig = {
     ...config,
@@ -74,6 +75,8 @@ export async function runSingleSimulationWithRealization(
   let intercepted = false;
   let interceptionTime = 0;
   let bingoTriggered = false;
+  let safeReturn = false;
+  let outOfBounds = false;
   let interceptPoint: { x: number; y: number } | null = null;
 
   const maxSteps = Math.ceil(helicoEndurance / dt);
@@ -117,9 +120,20 @@ export async function runSingleSimulationWithRealization(
       helico = await rlPlanner!.planStepAsync(helico, grid, t, dt);
     }
 
-    if (helico.status === 'BINGO_RETURN') {
+    const distanceHomeAfterMove = Math.hypot(realization.frigateX-helico.x, realization.frigateY-helico.y);
+    const requiredFuelAfterMove = distanceHomeAfterMove/realization.helicoSpeed*60.0;
+    if (helico.fuelRemaining < requiredFuelAfterMove) {
       bingoTriggered = true;
     }
+    if (helico.status === 'SAFE_RTB') {
+      safeReturn = true;
+    }
+    const halfWidth = config.searchAreaWidth/2;
+    const halfHeight = config.searchAreaHeight/2;
+    outOfBounds = (
+      helico.x < config.searchAreaCenterX-halfWidth || helico.x > config.searchAreaCenterX+halfWidth
+      || helico.y < config.searchAreaCenterY-halfHeight || helico.y > config.searchAreaCenterY+halfHeight
+    );
 
     const targetBearingDeg = normalizeAngle(
       (Math.atan2(targetPoint.x - helico.x, targetPoint.y - helico.y) * 180.0) / Math.PI
@@ -139,7 +153,7 @@ export async function runSingleSimulationWithRealization(
     });
 
     if (pDetTarget > 0.05) {
-      if (Math.random() < pDetTarget || distToTarget < 0.8) {
+      if (detectionRng.uniform() < pDetTarget || distToTarget < 0.8) {
         intercepted = true;
         interceptionTime = t;
         interceptPoint = { x: targetPoint.x, y: targetPoint.y };
@@ -167,12 +181,18 @@ export async function runSingleSimulationWithRealization(
       });
     }
 
-    if (helico.status === 'OUT_OF_FUEL' || (helico.status === 'BINGO_RETURN' && Math.hypot(realization.frigateX - helico.x, realization.frigateY - helico.y) < 0.2)) {
+    if (helico.status === 'OUT_OF_FUEL' || helico.status === 'SAFE_RTB' || outOfBounds) {
       break;
     }
   }
 
   const fuelConsumed = helicoEndurance - Math.max(0, helico.fuelRemaining);
+  const outcome: MonteCarloRunResult['outcome'] = intercepted ? 'INTERCEPTED'
+    : safeReturn ? 'SAFE_RTB'
+    : outOfBounds ? 'OUT_OF_BOUNDS'
+    : bingoTriggered ? 'BINGO_VIOLATION'
+    : helico.status === 'OUT_OF_FUEL' ? 'OUT_OF_FUEL'
+    : 'TIME_LIMIT';
 
   return {
     runId,
@@ -181,6 +201,9 @@ export async function runSingleSimulationWithRealization(
     interceptionTime: intercepted ? interceptionTime : helicoEndurance,
     fuelConsumed,
     bingoTriggered,
+    safeReturn,
+    outOfBounds,
+    outcome,
     targetPath: targetSim.getPath(),
     helicoPath,
     interceptPoint,
@@ -214,6 +237,8 @@ export function computeStrategyStats(runs: MonteCarloRunResult[]): StrategyStats
       meanFuelConsumed: 0,
       bingoCount: 0,
       bingoRate: 0,
+      safeReturnCount: 0,
+      safeReturnRate: 0,
       timeHistogram: [],
       cumulativeProb: [],
     };
@@ -230,6 +255,8 @@ export function computeStrategyStats(runs: MonteCarloRunResult[]): StrategyStats
   const meanFuelConsumed = runs.reduce((acc, r) => acc + r.fuelConsumed, 0) / totalRuns;
   const bingoCount = runs.filter(r => r.bingoTriggered).length;
   const bingoRate = (bingoCount / totalRuns) * 100.0;
+  const safeReturnCount = runs.filter(r => r.safeReturn).length;
+  const safeReturnRate = (safeReturnCount / totalRuns) * 100.0;
 
   const timeBins = [15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180];
   const timeHistogram = timeBins.map(bin => {
@@ -251,6 +278,8 @@ export function computeStrategyStats(runs: MonteCarloRunResult[]): StrategyStats
     meanFuelConsumed,
     bingoCount,
     bingoRate,
+    safeReturnCount,
+    safeReturnRate,
     timeHistogram,
     cumulativeProb,
   };
@@ -416,9 +445,10 @@ export async function runMonteCarloSuite(
 
   const totalTasks = N * ((runSIGMA ? 1 : 0) + (runNaive ? 1 : 0) + (runRL ? 1 : 0));
   let completed = 0;
+  const suiteRng = new SeededRandom(config.monteCarloSeed ?? 2026);
 
   for (let k = 1; k <= N; k++) {
-    const targetSimHelper = new TargetSim(config);
+    const targetSimHelper = new TargetSim(config, undefined, suiteRng);
     const realization = targetSimHelper.getRealization();
 
     if (runSIGMA) {
