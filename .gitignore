@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Python generated artifacts
+__pycache__/
+*.py[cod]
+python/hybrid_v*_report.json
+python/models/PPO_CANDIDATE_*.zip
+python/models/BC_CHECKPOINT_*.zip
+public/models/PPO_CANDIDATE_*.onnx
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

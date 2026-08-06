@@ -1,119 +1,174 @@
-# Guide Architecture & Spécifications de l'Agent RL (AGENTS.md)
+# AGENTS.md — BaysianPatrol v2.3.1 RL / Monte-Carlo
 
-Ce document décrit en détail le concept, les spécifications mathématiques et la structure technique du système de patrouille maritime optimisée par **Apprentissage par Renforcement (Reinforcement Learning - RL)**.
+Ce fichier est le contrat de travail pour tout agent intervenant sur le dépôt. **Python/Gymnasium est la référence canonique du contrat RL** ; TypeScript/ONNX doit reproduire exactement ses observations, actions, règles de sécurité et critères terminaux.
 
----
+## 1. Mission et règle de sécurité
 
-## 1. Vue d'Ensemble du Concept
+BaysianPatrol compare trois stratégies de recherche SAR maritime : râteau naïf, SIGMA bayésien et politique RL. Le critère principal est le taux d'interception sur des scénarios identiques et reproductibles.
 
-Le projet **BaysianPatrol** modélise un problème de Recherche et Sauvetage Maritime (SAR) où un hélicoptère embarqué (décollant d'une frégate) doit intercepter une cible mobile stochastique (navire désemparé, naufragé) localisée initialement avec une incertitude spatio-temporelle (**Datum**).
+Le Bingo carburant et les limites de zone sont des **contraintes dures**, pas des comportements que le réseau doit apprendre par pénalité :
 
-L'objectif de l'**Agent RL** est d'apprendre une politique de navigation optimale $\pi(a_t | o_t)$ pour maximer le taux d'interception de la cible tout en minimisant le temps de recherche et en respectant les contraintes strictes de sécurité de carburant (**Bingo Fuel**).
+- le superviseur calcule `fuel_margin = fuel_remaining - return_time - bingo_buffer` ;
+- quand la marge approche zéro, il ignore l'action RL et force le retour frégate ;
+- le geofence borne tout waypoint à la zone de recherche ;
+- un retour réussi se termine par `safe_rtb` / `SAFE_RTB` ;
+- un retour normal ne doit jamais être compté comme violation Bingo.
 
----
+Résultats opérationnels communs :
 
-## 2. Spécification de l'Agent RL (Gymnasium & PPO)
+- `intercepted` / `INTERCEPTED` ;
+- `safe_rtb` / `SAFE_RTB` ;
+- `bingo` / `BINGO_VIOLATION` ;
+- `out_of_bounds` / `OUT_OF_BOUNDS` ;
+- `OUT_OF_FUEL` ;
+- `time_limit` / `TIME_LIMIT`.
 
-L'agent évolue dans l'environnement Gymnasium `BaysianPatrolEnv` (dossier `/python`).
+## 2. Contrat RL v2.3.1
 
-### A. Espace d'Observations ($O_t$)
-Le vecteur d'observation reçu par l'agent à chaque pas $t$ réunit la croyance spatiale bayésienne et l'état cinématique de l'aéronef :
+### Observation `grid` — `(2, 32, 32)`
 
-1. **Branche Grille 2D Convolutive (`grid`)** : Matrice $2 \times 32 \times 32$
-   - **Canal 0** : Carte de probabilité de présence bayésienne évolutive $P(x,y,t)$ normalisée ($\sum P = 1.0$).
-   - **Canal 1** : Masque binaire des zones déjà prospectées par le radar ($1.0 = \text{scanné}, 0.0 = \text{non scanné}$).
-2. **Branche Scalaire MLP (`vector`)** : Vecteur normalisé à 10 dimensions
-   - $[x_{\text{norm}}, y_{\text{norm}}, \sin(\theta), \cos(\theta), V_{\text{norm}}, \text{Fuel}_{\text{ratio}}, d_{\text{frégate\_norm}}, v_{w,x}, v_{w,y}, R_{0,\text{norm}}]$
+- Canal 0 : posterior bayésien mis à l'échelle par son pic pour l'entrée CNN (`P / max(P)`, donc plage 0–1).
+- Canal 1 : mémoire continue de balayage radar, plage 0–1 avec décroissance temporelle.
 
-### B. Espace d'Actions ($A_t$)
-Espace continu $A_t \in [-1.0, 1.0]^2$ :
-- **Action[0] ($\Delta \theta$)** : Variation relative de cap, projetée sur le taux de virage maximal admis par la physique ($\omega_{\max} = 3^\circ/\text{s}$).
-- **Action[1] ($\Delta V$)** : Variation relative de vitesse, projetée sur l'accélération maximale admissible ($V \in [60, V_{\max}]\text{ kts}$).
+La distribution probabiliste interne reste séparément normalisée avec `sum(P) = 1`. Ne jamais remplacer la distribution interne par sa version peak-scaled.
 
-### C. Fonction de Récompense ($R_t$)
-La fonction de récompense globale au pas de temps $t$ équilibre la vitesse d'interception, l'exploration bayésienne et la sécurité de l'équipage :
+Après une non-détection, appliquer réellement :
 
-$$R_t = R_{\text{détection}} + R_{\text{gain\_prob}} + R_{\text{temps}} + R_{\text{bingo}} + R_{\text{limite}}$$
-
-- **Détection de Cible** : $R_{\text{détection}} = +500.0$ si la cible est détectée par le radar ($P_{\text{det}} > 0.05$ ou proximité $< 0.8\text{ NM}$).
-- **Gain d'Information** : $R_{\text{gain\_prob}} = +10.0 \times \Delta P_{\text{scanned}}$ (récompense le balayage de zones à forte probabilité $P(x,y,t)$).
-- **Pénalité Temporelle / Carburant** : $R_{\text{temps}} = -0.1 \times dt$ (minimise la durée de patrouille).
-- **Pénalité Bingo Fuel** : $R_{\text{bingo}} = -1000.0$ si l'hélicoptère franchit la limite Bingo Fuel sans autonomie suffisante pour rallier la frégate.
-- **Sortie de Zone** : $R_{\text{limite}} = -50.0$ si l'aéronef sort des limites de la zone de recherche.
-
-### D. Architecture du Réseau de Neurones
-- **Feature Extractor** : Réseau neuronal convolutif (NatureCNN 2D) pour extraire les caractéristiques spatiales de la grille $32 \times 32$, fusionné avec un Perceptron (MLP) à 64 neurones pour les vecteurs cinématiques.
-- **Tête de Politique (Actor-Critic PPO)** : Génère la distribution gaussienne des actions $[\Delta \theta, \Delta V]$.
-- **Export ONNX** : Politique exportée au format ONNX (`baysian_patrol_policy.onnx`) pour une exécution client-side sans serveur backend.
-
----
-
-## 3. Banc de Test Monte-Carlo (Comparatif 3-Voies)
-
-Pour évaluer objectivement les performances, le simulateur Monte-Carlo (`/src`) compare l'agent RL à deux autres stratégies sur $N$ tirages stochastiques identiques :
-
-| Stratégie | Description / Principe | Type d'Algorithme |
-| :--- | :--- | :--- |
-| **Option 1 : Naïve (IAMSAR)** | Râteau de recherche géométrique parallèle basé sur les fiches théoriques SAR. | Heuristique déterministe fixe |
-| **Option 2 : Bayésienne (AMI / POMDP)** | Solveur algorithmique recalculant à chaque pas de temps la passe transversale maximisant le gradient de croyance. | Solveur d'optimisation numérique |
-| **Option 3 : Modèle RL SIGMA (PPO)** | Réseau de neurones (Agent RL / SIGMA) inférant directement le cap et la vitesse optimaux selon l'état de croyance et les incertitudes. | Réseau de Neurones / ONNX Runtime |
-
----
-
-## 4. Organisation de la Structure du Projet
-
-```
-BaysianPatrol/
-├── AGENTS.md                  # Ce fichier de spécification globale de l'agent RL
-├── python/                    # MODULE D'ENTRAÎNEMENT PYTHON
-│   ├── baysian_patrol_env.py  # Environnement Gymnasium (Grille 2D, Cinématique, Rewards)
-│   ├── train.py               # Script d'entraînement PPO (Stable-Baselines3 + TensorBoard)
-│   ├── export_onnx.py         # Script d'export vers public/models/baysian_patrol_policy.onnx
-│   ├── requirements.txt       # Dépendances Python (gymnasium, torch, onnx, etc.)
-│   └── tests/
-│       └── test_env.py        # Tests unitaires de l'environnement Gymnasium
-├── public/
-│   └── models/
-│       └── baysian_patrol_policy.onnx # Modèle ONNX pré-compilé pour inférence navigateur
-├── src/                       # APPLICATION WEB MONTE-CARLO (REACT / TS)
-│   ├── components/
-│   │   ├── ControlPanel.tsx   # Panneau de configuration stochastique & choix de stratégie
-│   │   ├── StatsDashboard.tsx # Dashboard de comparatif 3-voies (KPIs, Win Rates)
-│   │   └── TacticalCanvas.tsx # Visualisateur WebGL / Canvas 2D des trajectoires
-│   ├── engine/
-│   │   ├── bayesianGrid.ts    # Moteur de mise à jour de la densité bayésienne
-│   │   ├── rlAlgorithm.ts     # Inférence du Modèle RL (TypeScript / ONNX)
-│   │   ├── simulator.ts       # Moteur d'exécution des runs Monte-Carlo
-│   │   └── mcWorker.ts        # Web Worker pour calculs distribués
-│   └── types/
-│       └── simulation.ts      # Définition des types TypeScript (TRIO, RL_MODEL, Stats)
+```text
+posterior = prior × (1 - Pdet)
+posterior /= sum(posterior)
 ```
 
----
+Le filtre de croyance ne doit jamais utiliser le véritable cap caché de la cible.
 
-## 5. Commandes de Référence pour un Agent ou Développeur
+### Observation `vector` — 10 valeurs
 
-### Entraîner le Modèle RL (Python) :
+Ordre immuable, identique dans Python et TypeScript :
+
+```text
+0  sin(cap hélicoptère)
+1  cos(cap hélicoptère)
+2  vitesse / vitesse_max
+3  marge_carburant / endurance
+4  dx frégate relatif
+5  dy frégate relatif
+6  dx pic de croyance relatif
+7  dy pic de croyance relatif
+8  entropie normalisée de la croyance
+9  temps écoulé / endurance
+```
+
+N'ajouter aucune variable non causale. Le vent n'a pas besoin d'être exposé si son effet est déjà intégré au filtre de croyance.
+
+### Action — waypoint relatif
+
+`Box([-1,-1], [1,1])` :
+
+```text
+action[0] = décalage X relatif du waypoint
+ action[1] = décalage Y relatif du waypoint
+```
+
+Le réseau ne pilote plus directement virage et accélération. Un autopilote déterministe vole vers le waypoint à la vitesse de recherche. Le safety shield et le geofence s'appliquent ensuite. Toute modification de cette sémantique doit être faite simultanément dans :
+
+- `python/baysian_patrol_env.py` ;
+- `src/engine/missionContract.ts` ;
+- `src/engine/rlAlgorithm.ts` ;
+- l'export ONNX et ses tests.
+
+## 3. Entraînement recommandé
+
+Pipeline principal : `python/hybrid_train.py`.
+
+1. Générer des démonstrations avec `env.expert_action()`.
+2. Initialiser la politique par Behavior Cloning.
+3. Affiner avec PPO selon le curriculum 1 → 4.
+4. Évaluer expert, BC et PPO sur le **même jeu fixe de seeds**.
+5. Exporter sous `PPO_CANDIDATE_*.onnx`.
+6. Ne promouvoir vers `public/models/baysian_patrol_policy.onnx` qu'après passage des gates.
+
+Curriculum :
+
+1. cible fixe ;
+2. cible mobile simple ;
+3. dérive stochastique ;
+4. dynamique complète.
+
+L'ancienne `autoresearch_v3.py` n'est pas la voie principale pour v2.3.1. Elle ne doit être réutilisée qu'après obtention d'une baseline hybride saine, pour des ablations limitées autour de cette baseline. Ne jamais relancer une recherche large d'hyperparamètres pour masquer un défaut de contrat.
+
+## 4. Gates de promotion d'un modèle
+
+Un modèle candidat ne remplace le modèle actif que si :
+
+- évaluation finale sur au moins 500 seeds fixes et séparées de l'entraînement ;
+- `bingo_fail_rate == 0` ;
+- `out_of_bounds_rate == 0` ;
+- taux d'interception au moins équivalent à la meilleure baseline sur les mêmes seeds ;
+- borne inférieure de Wilson 95 % publiée ;
+- équivalence Python/ONNX, erreur absolue maximale `< 1e-4` sur au moins 100 observations ;
+- build TypeScript réussi ;
+- test de trajectoires de référence navigateur/Python réussi.
+
+Les modèles `PPO_CANDIDATE_*` et les rapports de smoke test ne sont pas automatiquement opérationnels. Le candidat court seed 77 produit pendant le développement était volontairement insuffisant et ne doit pas être activé.
+
+## 5. Monte-Carlo
+
+Les comparaisons doivent utiliser des réalisations appariées et reproductibles :
+
+- `ScenarioConfig.monteCarloSeed` contrôle la suite ; défaut 2026 ;
+- `SeededRandom` remplace `Math.random()` pour cible et détection ;
+- chaque stratégie reçoit la même réalisation, la même trajectoire cible et des tirages radar communs ;
+- `bingoRate` mesure uniquement une violation de réserve, pas le déclenchement d'un retour normal ;
+- `safeReturnRate` est publié séparément.
+
+La grille Monte-Carlo conserve trois cartes (`classical`, `bayesianStandard`, `bayesianEvolved`) et applique une mise à jour négative après balayage. Les règles physiques partagées avec Python doivent rester cohérentes : vitesse, endurance, réserve, portée, déplacement cible, limites et critères terminaux.
+
+## 6. Fichiers importants
+
+```text
+python/baysian_patrol_env.py        environnement canonique
+python/hybrid_train.py              expert → BC → curriculum PPO
+python/export_onnx.py               export acteur SB3 réel
+python/tests/test_env_v231.py       contrat RL et sécurité
+python/tests/test_hybrid_train.py   seeds, évaluation et démonstrations
+src/engine/missionContract.ts       contrat navigateur partagé
+src/engine/rlAlgorithm.ts           observation ONNX + autopilote + RTB
+src/engine/bayesianGrid.ts          posterior Monte-Carlo
+src/engine/random.ts                PRNG seedé
+src/engine/targetGenerator.ts       réalisation et trajectoire cible
+src/engine/simulator.ts             Monte-Carlo apparié et outcomes
+tests-ts/missionContract.test.ts    tests du contrat TypeScript
+```
+
+## 7. Commandes de vérification
+
+Depuis le dépôt :
+
 ```bash
-python python/train.py
-```
+# Python
+python -m unittest discover -s python/tests -v
 
-### Visualiser l'Entraînement (TensorBoard) :
-```bash
-tensorboard --logdir python/tensorboard_logs
-```
+# Contrat TypeScript pur (Node >=22)
+node --experimental-strip-types --test tests-ts/missionContract.test.ts
 
-### Lancer les Tests Unitaires Python :
-```bash
-python python/tests/test_env.py
-```
-
-### Lancer l'Application Web & le Comparateur (React) :
-```bash
-npm run dev
-```
-
-### Valider le Build Production Web :
-```bash
+# Frontend
+npm install
 npm run build
+
+# Smoke test hybride sans promotion automatique
+python python/hybrid_train.py \
+  --demo-episodes 40 --bc-epochs 5 \
+  --ppo-steps-per-level 1024 --n-envs 2 \
+  --eval-episodes 30 --seed 77
 ```
+
+Sur HP (`192.168.1.238`), privilégier quatre environnements CPU. La GTX 950M `sm_50` n'est pas une cible PyTorch moderne recommandée.
+
+## 8. Discipline de modification
+
+- TDD : écrire et exécuter le test rouge avant tout changement de comportement.
+- Seeds d'entraînement et d'évaluation séparées.
+- Comparer tous les candidats sur les mêmes seeds.
+- La récompense est diagnostique ; le taux d'interception et la sécurité déterminent le classement.
+- Ne jamais écraser le modèle actif pendant une campagne.
+- Ne jamais publier un résultat provenant d'un seul seed comme preuve de convergence.

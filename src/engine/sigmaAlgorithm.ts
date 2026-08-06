@@ -57,7 +57,7 @@ export class SIGMAPlanner {
           heading: currentHelico.heading,
           speed: 0,
           fuelRemaining: Math.max(0, currentHelico.fuelRemaining - dtMinutes),
-          status: 'BINGO_RETURN',
+          status: 'SAFE_RTB',
         };
       }
 

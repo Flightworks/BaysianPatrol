@@ -1,0 +1,89 @@
+{
+  "version": "2.3.1",
+  "selected_training_seed": 2027,
+  "selected_stage": "bc",
+  "evaluation_seeds": "200000-200499",
+  "multi_seed_python": {
+    "training_seeds": [
+      2026,
+      2027,
+      2028
+    ],
+    "total_episodes": 1500,
+    "total_successes": 1500,
+    "total_bingo_failures": 0,
+    "total_out_of_bounds": 0,
+    "runs": {
+      "2026": {
+        "selected_stage": "bc",
+        "promotion_eligible": true,
+        "episodes": 500,
+        "successes": 500,
+        "success_rate": 100.0,
+        "success_lcb95": 99.23753814690966,
+        "bingo_failures": 0,
+        "out_of_bounds": 0,
+        "mean_interception_time": 9.61
+      },
+      "2027": {
+        "selected_stage": "bc",
+        "promotion_eligible": true,
+        "episodes": 500,
+        "successes": 500,
+        "success_rate": 100.0,
+        "success_lcb95": 99.23753814690966,
+        "bingo_failures": 0,
+        "out_of_bounds": 0,
+        "mean_interception_time": 9.608
+      },
+      "2028": {
+        "selected_stage": "bc",
+        "promotion_eligible": true,
+        "episodes": 500,
+        "successes": 500,
+        "success_rate": 100.0,
+        "success_lcb95": 99.23753814690966,
+        "bingo_failures": 0,
+        "out_of_bounds": 0,
+        "mean_interception_time": 9.596
+      }
+    }
+  },
+  "onnx_parity": {
+    "observations_per_model": 100,
+    "threshold": 0.0001,
+    "max_abs_diff": {
+      "2026": 3.5762786865234375e-07,
+      "2027": 2.980232238769531e-07,
+      "2028": 3.5762786865234375e-07
+    },
+    "all_passed": true
+  },
+  "browser_monte_carlo": {
+    "scenario": "standard",
+    "monte_carlo_seed": 2026,
+    "runs": 250,
+    "selected_model_seed": 2027,
+    "rl": {
+      "detection_rate": 100.0,
+      "mean_interception_time": 12.0,
+      "safe_return_rate": 0.0,
+      "bingo_violation_rate": 0.0
+    },
+    "pomdp": {
+      "detection_rate": 93.6,
+      "mean_interception_time": 16.4,
+      "bingo_violation_rate": 0.0
+    },
+    "naive": {
+      "detection_rate": 100.0,
+      "mean_interception_time": 16.3,
+      "bingo_violation_rate": 0.0
+    },
+    "javascript_errors": 0
+  },
+  "artifacts": {
+    "python_zip_sha256": "858adc805d82f98e4aaf669a4531f0fcc259186fd63450ed0bcabeab473b13c1",
+    "onnx_sha256": "b553ec635567f794f3f2b96e8c171dd27cd4e3bad98ea7c3f38289b60e09ec22"
+  }
+}

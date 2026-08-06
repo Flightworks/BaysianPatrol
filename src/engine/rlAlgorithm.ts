@@ -1,7 +1,15 @@
 import * as ort from 'onnxruntime-web';
 import type { HelicopterState, ScenarioConfig } from '../types/simulation';
 import type { BayesianGrid } from './bayesianGrid';
+import {
+  applyRelativeWaypoint,
+  buildHybridVector,
+  computeFuelMargin,
+  normalizedEntropy,
+  scaleBeliefForObservation,
+} from './missionContract';
 
+/** Browser counterpart of the canonical Python v2.3.1 waypoint contract. */
 export class RLPlanner {
   private config: ScenarioConfig;
   private session: ort.InferenceSession | null = null;
@@ -12,194 +20,121 @@ export class RLPlanner {
     this.initPromise = this.initOnnxSession();
   }
 
-  public async init() {
+  public async init(): Promise<void> {
     await this.initPromise;
   }
 
-  private async initOnnxSession() {
+  private async initOnnxSession(): Promise<void> {
     try {
-      // Load trained ONNX model with cache busting parameter
       this.session = await ort.InferenceSession.create(`/models/baysian_patrol_policy.onnx?t=${Date.now()}`);
-      console.log('Session ONNX Runtime Web chargée avec succès pour le Modèle RL PPO.');
-    } catch (err) {
-      console.warn("Chargement session ONNX non prêt ou modèle non trouvé, utilisation du planificateur de secours:", err);
+      console.log('Session ONNX Runtime Web chargée avec succès pour le modèle RL hybride.');
+    } catch (error) {
+      console.warn('Modèle ONNX indisponible : expert bayésien de secours utilisé.', error);
     }
   }
 
-  /**
-   * Evaluates the RL policy given current aircraft state, Bayesian grid belief, and time step.
-   */
-  public async planStepAsync(
-    helico: HelicopterState,
-    grid: BayesianGrid,
-    _t: number,
-    dt: number
-  ): Promise<HelicopterState> {
-    const { helicoMaxSpeed, frigateX, frigateY, searchAreaWidth, searchAreaHeight, radarBaseRange, windSpeed, windDirection } = this.config;
-
-    // 1. Action Masking & Safety Layer: Check Bingo Fuel
-    const distToFrigate = Math.hypot(helico.x - frigateX, helico.y - frigateY);
-    const timeToFrigate = (distToFrigate / helicoMaxSpeed) * 60.0;
-    const bingoBuffer = this.config.bingoFuelBuffer || 15.0;
-
-    if (helico.fuelRemaining <= timeToFrigate + bingoBuffer) {
-      const bingoHeading = (Math.atan2(frigateX - helico.x, frigateY - helico.y) * 180.0) / Math.PI;
-      const normalizedHeading = (bingoHeading + 360) % 360;
-
-      const fuelRemaining = helico.fuelRemaining - dt;
-      const distStep = (helicoMaxSpeed / 60.0) * dt;
-
-      const newX = helico.x + distStep * Math.sin((normalizedHeading * Math.PI) / 180.0);
-      const newY = helico.y + distStep * Math.cos((normalizedHeading * Math.PI) / 180.0);
-
-      const status = fuelRemaining <= 0 ? 'OUT_OF_FUEL' : 'BINGO_RETURN';
-
+  private safeReturn(helico: HelicopterState, dt: number): HelicopterState | null {
+    const { frigateX, frigateY, helicoMaxSpeed, bingoFuelBuffer } = this.config;
+    const dx = frigateX-helico.x;
+    const dy = frigateY-helico.y;
+    const distance = Math.hypot(dx, dy);
+    const metrics = computeFuelMargin(helico.fuelRemaining, distance, helicoMaxSpeed, bingoFuelBuffer || 15);
+    if (metrics.marginMinutes > dt && helico.status !== 'BINGO_RETURN') return null;
+    const maxTravel = helicoMaxSpeed/60*dt;
+    if (distance <= Math.max(1, maxTravel)) {
       return {
-        x: newX,
-        y: newY,
-        heading: normalizedHeading,
-        speed: helicoMaxSpeed,
-        fuelRemaining: Math.max(0, fuelRemaining),
-        status,
+        x: frigateX, y: frigateY, heading: helico.heading, speed: 0,
+        fuelRemaining: Math.max(0, helico.fuelRemaining-dt), status: 'SAFE_RTB',
       };
     }
-
-    // 2. Prepare 2D Grid & State Vector Observation for Neural Network Policy
-    const gridDim = 32;
-    const gridData = new Float32Array(2 * gridDim * gridDim);
-    
-    const stepI = grid.widthCells / gridDim;
-    const stepJ = grid.heightCells / gridDim;
-
-    for (let j = 0; j < gridDim; j++) {
-      for (let i = 0; i < gridDim; i++) {
-        const srcI = Math.min(grid.widthCells - 1, Math.floor(i * stepI));
-        const srcJ = Math.min(grid.heightCells - 1, Math.floor(j * stepJ));
-        const cell = grid.cells[srcJ][srcI];
-
-        // Channel 0: P(x,y,t)
-        gridData[0 * gridDim * gridDim + j * gridDim + i] = cell.pBayesianEvolved;
-        // Channel 1: Scanned mask
-        gridData[1 * gridDim * gridDim + j * gridDim + i] = cell.scanMemory;
-      }
-    }
-
-    // Vector Observation (10-dim)
-    const xNorm = helico.x / (searchAreaWidth / 2);
-    const yNorm = helico.y / (searchAreaHeight / 2);
-    const headingRad = (helico.heading * Math.PI) / 180.0;
-    const headingSin = Math.sin(headingRad);
-    const headingCos = Math.cos(headingRad);
-    const speedNorm = Math.max(0, Math.min(1, helico.speed / helicoMaxSpeed));
-    const fuelRatio = helico.fuelRemaining / (this.config.helicoEndurance || 180.0);
-    const distFrigateNorm = distToFrigate / searchAreaWidth;
-    
-    const windRad = (windDirection * Math.PI) / 180.0;
-    const windXNorm = (windSpeed * Math.sin(windRad)) / 50.0;
-    const windYNorm = (windSpeed * Math.cos(windRad)) / 50.0;
-    const radarNorm = radarBaseRange / 30.0;
-
-    const vectorData = new Float32Array([
-      xNorm, yNorm, headingSin, headingCos, speedNorm,
-      fuelRatio, distFrigateNorm, windXNorm, windYNorm, radarNorm
-    ]);
-
-    let actionDeltaHeading = 0.0;
-    let actionDeltaSpeed = 0.0;
-
-    // 3. Evaluate ONNX Neural Network Policy Weights
-    if (this.session) {
-      try {
-        const gridTensor = new ort.Tensor('float32', gridData, [1, 2, gridDim, gridDim]);
-        const vectorTensor = new ort.Tensor('float32', vectorData, [1, 10]);
-
-        const outputs = await this.session.run({ grid: gridTensor, vector: vectorTensor });
-        if (outputs && outputs.action && outputs.action.data) {
-          const actionData = outputs.action.data as Float32Array;
-          actionDeltaHeading = actionData[0] || 0.0;
-          actionDeltaSpeed = actionData[1] || 0.0;
-        }
-      } catch (err) {
-        console.warn("Erreur lors de l'inférence ONNX:", err);
-      }
-    } else {
-      // Backup Heuristic if ONNX not ready
-      let maxCell = { x: 0, y: 0, prob: -1 };
-      for (let j = 0; j < grid.heightCells; j++) {
-        for (let i = 0; i < grid.widthCells; i++) {
-          const cell = grid.cells[j][i];
-          if (cell.pBayesianEvolved > maxCell.prob) {
-            maxCell = { x: cell.x, y: cell.y, prob: cell.pBayesianEvolved };
-          }
-        }
-      }
-      const targetHeadingDeg = (Math.atan2(maxCell.x - helico.x, maxCell.y - helico.y) * 180.0) / Math.PI;
-      const normTargetHeading = (targetHeadingDeg + 360) % 360;
-      let diff = normTargetHeading - helico.heading;
-      while (diff < -180) diff += 360;
-      while (diff > 180) diff -= 360;
-      actionDeltaHeading = Math.sign(diff) * Math.min(1.0, Math.abs(diff) / 180.0);
-      actionDeltaSpeed = 0.5;
-    }
-
-    // Kinematics Update: Max turn rate is 180 deg/min (180 * dt per step)
-    const maxTurnRateDeg = 180.0 * dt;
-    const deltaHeadingDeg = actionDeltaHeading * maxTurnRateDeg;
-    const newHeading = (helico.heading + deltaHeadingDeg + 360) % 360;
-
-    const currentSpeed = Math.min(helicoMaxSpeed, Math.max(60.0, helicoMaxSpeed * (0.8 + 0.2 * actionDeltaSpeed)));
-    const distStep = (currentSpeed / 60.0) * dt;
-
-    const newX = helico.x + distStep * Math.sin((newHeading * Math.PI) / 180.0);
-    const newY = helico.y + distStep * Math.cos((newHeading * Math.PI) / 180.0);
-
-    const fuelRemaining = helico.fuelRemaining - dt;
-
+    const heading = (Math.atan2(dx, dy)*180/Math.PI+360)%360;
+    const radians = heading*Math.PI/180;
     return {
-      x: newX,
-      y: newY,
-      heading: newHeading,
-      speed: currentSpeed,
-      fuelRemaining: Math.max(0, fuelRemaining),
-      status: fuelRemaining <= 0 ? 'OUT_OF_FUEL' : 'SEARCHING',
+      x: helico.x+maxTravel*Math.sin(radians),
+      y: helico.y+maxTravel*Math.cos(radians),
+      heading, speed: helicoMaxSpeed,
+      fuelRemaining: Math.max(0, helico.fuelRemaining-dt),
+      status: 'BINGO_RETURN',
     };
   }
 
-  // Synchronous fallback wrapper
-  public planStep(
-    helico: HelicopterState,
-    grid: BayesianGrid,
-    _t: number,
-    dt: number
-  ): HelicopterState {
-    // For synchronous calls, default to max probability cell target
-    let maxCell = { x: 0, y: 0, prob: -1 };
-    for (let j = 0; j < grid.heightCells; j++) {
-      for (let i = 0; i < grid.widthCells; i++) {
-        const cell = grid.cells[j][i];
-        if (cell.pBayesianEvolved > maxCell.prob) {
-          maxCell = { x: cell.x, y: cell.y, prob: cell.pBayesianEvolved };
+  private observation(helico: HelicopterState, grid: BayesianGrid, elapsedMinutes: number): {
+    gridData: Float32Array;
+    vectorData: Float32Array;
+    expertAction: [number, number];
+  } {
+    const gridDim = 32;
+    const rawProbability = grid.getFlatBayesianEvolvedProbs();
+    const scaledProbability = scaleBeliefForObservation(rawProbability);
+    const gridData = new Float32Array(2*gridDim*gridDim);
+    const stepI = grid.widthCells/gridDim;
+    const stepJ = grid.heightCells/gridDim;
+    let peak = { x: 0, y: 0, probability: -1 };
+
+    for (let j=0; j<gridDim; j++) {
+      for (let i=0; i<gridDim; i++) {
+        const srcI = Math.min(grid.widthCells-1, Math.floor(i*stepI));
+        const srcJ = Math.min(grid.heightCells-1, Math.floor(j*stepJ));
+        const sourceIndex = srcJ*grid.widthCells+srcI;
+        const cell = grid.cells[srcJ][srcI];
+        gridData[j*gridDim+i] = scaledProbability[sourceIndex] ?? 0;
+        gridData[gridDim*gridDim+j*gridDim+i] = cell.scanMemory;
+        if (cell.pBayesianEvolved > peak.probability) {
+          peak = { x: cell.x, y: cell.y, probability: cell.pBayesianEvolved };
         }
       }
     }
-    const targetHeadingDeg = (Math.atan2(maxCell.x - helico.x, maxCell.y - helico.y) * 180.0) / Math.PI;
-    const normTargetHeading = (targetHeadingDeg + 360) % 360;
-    const maxTurn = 180.0 * dt;
-    let diff = normTargetHeading - helico.heading;
-    while (diff < -180) diff += 360;
-    while (diff > 180) diff -= 360;
-    const actualTurn = Math.sign(diff) * Math.min(Math.abs(diff), maxTurn);
-    const newHeading = (helico.heading + actualTurn + 360) % 360;
-    const newSpeed = this.config.helicoMaxSpeed * 0.95;
-    const distStep = (newSpeed / 60.0) * dt;
 
-    return {
-      x: helico.x + distStep * Math.sin((newHeading * Math.PI) / 180.0),
-      y: helico.y + distStep * Math.cos((newHeading * Math.PI) / 180.0),
-      heading: newHeading,
-      speed: newSpeed,
-      fuelRemaining: Math.max(0, helico.fuelRemaining - dt),
-      status: helico.fuelRemaining - dt <= 0 ? 'OUT_OF_FUEL' : 'SEARCHING',
-    };
+    const halfWidth = this.config.searchAreaWidth/2;
+    const halfHeight = this.config.searchAreaHeight/2;
+    const vectorData = new Float32Array(buildHybridVector({
+      helicoX: helico.x, helicoY: helico.y, headingDeg: helico.heading,
+      speed: helico.speed, maxSpeed: this.config.helicoMaxSpeed,
+      fuelRemaining: helico.fuelRemaining, maxFuel: this.config.helicoEndurance,
+      frigateX: this.config.frigateX, frigateY: this.config.frigateY,
+      halfWidth, halfHeight, peakX: peak.x, peakY: peak.y,
+      entropy: normalizedEntropy(rawProbability), elapsedMinutes,
+      bingoBuffer: this.config.bingoFuelBuffer || 15,
+    }));
+    const expertAction: [number, number] = [
+      Math.max(-1, Math.min(1, (peak.x-helico.x)/halfWidth)),
+      Math.max(-1, Math.min(1, (peak.y-helico.y)/halfHeight)),
+    ];
+    return { gridData, vectorData, expertAction };
+  }
+
+  public async planStepAsync(helico: HelicopterState, grid: BayesianGrid, t: number, dt: number): Promise<HelicopterState> {
+    const returnState = this.safeReturn(helico, dt);
+    if (returnState) return returnState;
+    const observation = this.observation(helico, grid, t);
+    let action: [number, number] = observation.expertAction;
+    if (this.session) {
+      try {
+        const outputs = await this.session.run({
+          grid: new ort.Tensor('float32', observation.gridData, [1, 2, 32, 32]),
+          vector: new ort.Tensor('float32', observation.vectorData, [1, 10]),
+        });
+        const values = outputs.action?.data as Float32Array | undefined;
+        if (values && values.length >= 2) action = [values[0], values[1]];
+      } catch (error) {
+        console.warn('Inférence ONNX échouée : expert de secours utilisé.', error);
+      }
+    }
+    const next = applyRelativeWaypoint(
+      helico, action, this.config.searchAreaWidth/2, this.config.searchAreaHeight/2,
+      this.config.helicoMaxSpeed, dt, this.config.searchAreaCenterX, this.config.searchAreaCenterY,
+    );
+    return { ...next, status: next.fuelRemaining <= 0 ? 'OUT_OF_FUEL' : 'SEARCHING' };
+  }
+
+  public planStep(helico: HelicopterState, grid: BayesianGrid, t: number, dt: number): HelicopterState {
+    const returnState = this.safeReturn(helico, dt);
+    if (returnState) return returnState;
+    const action = this.observation(helico, grid, t).expertAction;
+    const next = applyRelativeWaypoint(
+      helico, action, this.config.searchAreaWidth/2, this.config.searchAreaHeight/2,
+      this.config.helicoMaxSpeed, dt, this.config.searchAreaCenterX, this.config.searchAreaCenterY,
+    );
+    return { ...next, status: next.fuelRemaining <= 0 ? 'OUT_OF_FUEL' : 'SEARCHING' };
   }
 }

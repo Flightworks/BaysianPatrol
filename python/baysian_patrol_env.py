@@ -1,201 +1,243 @@
+"""Canonical Gymnasium environment for BaysianPatrol v2.3.1.
+
+The policy selects a relative search waypoint. A deterministic autopilot flies to
+that waypoint and a non-learned safety shield guarantees a conservative return
+to the frigate before Bingo fuel.
+"""
+from __future__ import annotations
+
 import math
-import numpy as np
+from typing import Any
+
 import gymnasium as gym
+import numpy as np
 from gymnasium import spaces
+from scipy.ndimage import gaussian_filter, shift
 
 
 class BaysianPatrolEnv(gym.Env):
-    """Maritime SAR search environment with reproducible stochastic dynamics."""
-
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
+    metadata = {"render_modes": []}
 
     def __init__(
         self,
-        grid_dim: int = 32,
-        search_area_width: float = 120.0,
-        search_area_height: float = 120.0,
-        dt: float = 1.0,
-        max_endurance: float = 180.0,
-        helico_max_speed: float = 140.0,
-        radar_base_range: float = 15.0,
-        max_turn_rate_deg_min: float = 180.0,
-        reward_detection: float = 500.0,
-        reward_exploration: float = 10.0,
-        penalty_time: float = 0.1,
-        penalty_bingo: float = 1000.0,
+        reward_detection: float = 10.0,
+        reward_probability: float = 2.0,
+        penalty_time: float = 0.01,
+        penalty_bingo: float = 10.0,
+        curriculum_level: int = 4,
+        reward_exploration: float | None = None,
     ):
         super().__init__()
-        self.grid_dim = grid_dim
-        self.search_area_width = search_area_width
-        self.search_area_height = search_area_height
-        self.dt = dt
-        self.max_endurance = max_endurance
-        self.helico_max_speed = helico_max_speed
-        self.radar_base_range = radar_base_range
-        self.max_turn_rate_rad_step = math.radians(max_turn_rate_deg_min) * dt
-        self.reward_detection = reward_detection
-        self.reward_exploration = reward_exploration
-        self.penalty_time = penalty_time
-        self.penalty_bingo = penalty_bingo
+        self.grid_size = 32
+        self.area_width = self.area_height = 100.0
+        self.half_width = self.area_width / 2.0
+        self.half_height = self.area_height / 2.0
+        self.min_x = self.min_y = -50.0
+        self.max_x = self.max_y = 50.0
+        self.dt = 1.0
+        self.max_steps = 180
+        self.max_fuel = 180.0
+        self.max_speed = 140.0
+        self.min_speed = 60.0
+        self.radar_range = 15.0
+        self.bingo_buffer = 15.0
+        self.rtb_radius = 1.0
+        self.curriculum_level = int(curriculum_level)
 
+        self.reward_detection = float(reward_detection)
+        if reward_exploration is not None:
+            reward_probability = reward_exploration
+        self.reward_probability = float(reward_probability)
+        self.penalty_time = float(penalty_time)
+        self.penalty_bingo = float(penalty_bingo)
+
+        self.action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
         self.observation_space = spaces.Dict({
-            "grid": spaces.Box(0.0, 1.0, shape=(2, grid_dim, grid_dim), dtype=np.float32),
+            "grid": spaces.Box(0.0, 1.0, shape=(2, 32, 32), dtype=np.float32),
             "vector": spaces.Box(-1.0, 1.0, shape=(10,), dtype=np.float32),
         })
-        self.action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
-        self._reset_state()
 
-    def _rng(self):
-        return getattr(self, "np_random", np.random.default_rng())
+        cell = self.area_width / self.grid_size
+        self.grid_x = np.linspace(self.min_x + cell / 2, self.max_x - cell / 2, self.grid_size)
+        self.grid_y = np.linspace(self.min_y + cell / 2, self.max_y - cell / 2, self.grid_size)
+        self.mesh_x, self.mesh_y = np.meshgrid(self.grid_x, self.grid_y)
 
-    def _reset_state(self):
-        rng = self._rng()
-        hw, hh = self.search_area_width / 2.0, self.search_area_height / 2.0
-        self.frigate_x = rng.uniform(-0.35 * self.search_area_width, 0.35 * self.search_area_width)
-        self.frigate_y = rng.uniform(-0.35 * self.search_area_height, 0.35 * self.search_area_height)
-        self.datum_x = rng.uniform(-0.35 * self.search_area_width, 0.35 * self.search_area_width)
-        self.datum_y = rng.uniform(-0.35 * self.search_area_height, 0.35 * self.search_area_height)
-        self.target_x = self.datum_x + rng.normal(0.0, 2.0)
-        self.target_y = self.datum_y + rng.normal(0.0, 2.0)
-        self.target_speed = rng.uniform(8.0, 22.0)
-        self.target_heading = rng.uniform(0.0, 2.0 * math.pi)
-        self.helico_x, self.helico_y = self.frigate_x, self.frigate_y
-        self.helico_heading = rng.uniform(0.0, 2.0 * math.pi)
-        self.helico_speed = 100.0
-        self.fuel_remaining = self.max_endurance
-        self.t = 0.0
-        self.wind_speed = rng.uniform(5.0, 25.0)
-        self.wind_dir = rng.uniform(0.0, 360.0)
-        self.grid_p = np.zeros((self.grid_dim, self.grid_dim), dtype=np.float32)
-        self.grid_scanned = np.zeros((self.grid_dim, self.grid_dim), dtype=np.float32)
-        xs = np.linspace(-hw, hw, self.grid_dim)
-        ys = np.linspace(-hh, hh, self.grid_dim)
-        xx, yy = np.meshgrid(xs, ys)
-        dist_sq = (xx - self.datum_x) ** 2 + (yy - self.datum_y) ** 2
-        self.grid_p = np.exp(-dist_sq / (2.0 * 15.0**2)).astype(np.float32)
-        self.grid_p /= np.sum(self.grid_p) + 1e-8
-        self.intercepted = False
-        self.bingo_failed = False
-        self.out_of_bounds = False
-        self.target_bounced = False
+    @staticmethod
+    def _normalise_probability(values: np.ndarray) -> np.ndarray:
+        values = np.maximum(values, 1e-12)
+        return (values / values.sum()).astype(np.float32)
 
-    def reset(self, seed=None, options=None):
+    def _initial_belief(self) -> np.ndarray:
+        sigma = 10.0 if self.curriculum_level <= 1 else 15.0
+        p = np.exp(-0.5 * (((self.mesh_x-self.datum_x)/sigma)**2 + ((self.mesh_y-self.datum_y)/sigma)**2))
+        return self._normalise_probability(p)
+
+    def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
-        self._reset_state()
-        return self._get_obs(), {}
+        del options
+        self.steps = 0
+        self.elapsed_min = 0.0
+        self.frigate_x = float(self.np_random.uniform(-35.0, 35.0))
+        self.frigate_y = float(self.np_random.uniform(-35.0, 35.0))
+        self.datum_x = float(self.np_random.uniform(-20.0, 20.0))
+        self.datum_y = float(self.np_random.uniform(-20.0, 20.0))
+        self.helico_x, self.helico_y = self.frigate_x, self.frigate_y
+        self.helico_heading = float(self.np_random.uniform(-math.pi, math.pi))
+        self.current_speed = self.max_speed
+        self.fuel_remaining = self.max_fuel
+        self.rtb_active = False
 
-    def _get_obs(self):
-        grid_obs = np.stack([self.grid_p, self.grid_scanned], axis=0).astype(np.float32)
-        x_norm = np.clip(self.helico_x / (self.search_area_width / 2.0), -1.0, 1.0)
-        y_norm = np.clip(self.helico_y / (self.search_area_height / 2.0), -1.0, 1.0)
-        dist_frigate = math.hypot(self.helico_x - self.frigate_x, self.helico_y - self.frigate_y)
-        vector_obs = np.array([
-            x_norm,
-            y_norm,
+        self.target_x = self.datum_x + float(self.np_random.normal(0.0, 2.0))
+        self.target_y = self.datum_y + float(self.np_random.normal(0.0, 2.0))
+        if self.curriculum_level <= 1:
+            self.target_speed = 0.0
+            self.target_heading = math.radians(45.0)
+        else:
+            self.target_speed = float(np.clip(self.np_random.normal(20.0, 3.0), 5.0, 35.0))
+            self.target_heading = math.radians(float(self.np_random.normal(45.0, 12.0)))
+        self.belief_speed = 0.0 if self.curriculum_level <= 1 else 20.0
+        self.belief_heading = math.radians(45.0)
+        self.grid_p = self._initial_belief()
+        self.scan_memory = np.zeros((self.grid_size, self.grid_size), dtype=np.float32)
+        return self._get_obs(), self._info("flying")
+
+    def _peak_position(self) -> tuple[float, float]:
+        idx = int(np.argmax(self.grid_p))
+        j, i = divmod(idx, self.grid_size)
+        return float(self.grid_x[i]), float(self.grid_y[j])
+
+    def _entropy(self) -> float:
+        p = np.maximum(self.grid_p.astype(np.float64), 1e-12)
+        return float(np.clip(-(p*np.log(p)).sum() / math.log(p.size), 0.0, 1.0))
+
+    def _return_time(self) -> float:
+        return math.hypot(self.helico_x-self.frigate_x, self.helico_y-self.frigate_y) / self.max_speed * 60.0
+
+    def _fuel_margin(self) -> float:
+        return self.fuel_remaining - self._return_time() - self.bingo_buffer
+
+    def _get_obs(self) -> dict[str, np.ndarray]:
+        peak_x, peak_y = self._peak_position()
+        peak = float(self.grid_p.max())
+        belief_obs = self.grid_p / peak if peak > 0 else self.grid_p
+        vector = np.array([
             math.sin(self.helico_heading),
             math.cos(self.helico_heading),
-            np.clip(self.helico_speed / self.helico_max_speed, 0.0, 1.0),
-            np.clip(self.fuel_remaining / self.max_endurance, 0.0, 1.0),
-            np.clip(dist_frigate / self.search_area_width, 0.0, 1.0),
-            np.clip((self.wind_speed * math.sin(math.radians(self.wind_dir))) / 50.0, -1.0, 1.0),
-            np.clip((self.wind_speed * math.cos(math.radians(self.wind_dir))) / 50.0, -1.0, 1.0),
-            np.clip(self.radar_base_range / 30.0, 0.0, 1.0),
+            self.current_speed / self.max_speed,
+            np.clip(self._fuel_margin() / self.max_fuel, -1.0, 1.0),
+            np.clip((self.frigate_x-self.helico_x) / self.half_width, -1.0, 1.0),
+            np.clip((self.frigate_y-self.helico_y) / self.half_height, -1.0, 1.0),
+            np.clip((peak_x-self.helico_x) / self.half_width, -1.0, 1.0),
+            np.clip((peak_y-self.helico_y) / self.half_height, -1.0, 1.0),
+            self._entropy(),
+            np.clip(self.elapsed_min / self.max_fuel, 0.0, 1.0),
         ], dtype=np.float32)
-        return {"grid": grid_obs, "vector": vector_obs}
+        return {"grid": np.stack((belief_obs, self.scan_memory)).astype(np.float32), "vector": vector}
 
-    def _move_target(self):
-        step = (self.target_speed / 60.0) * self.dt
-        self.target_x += step * math.sin(self.target_heading)
-        self.target_y += step * math.cos(self.target_heading)
-        hw, hh = self.search_area_width / 2.0, self.search_area_height / 2.0
-        bounced = False
-        if self.target_x < -hw or self.target_x > hw:
-            self.target_x = float(np.clip(self.target_x, -hw, hw))
+    def _predict_belief(self) -> None:
+        cell_nm = self.area_width / self.grid_size
+        dx_cells = self.belief_speed * math.sin(self.belief_heading) / 60.0 * self.dt / cell_nm
+        dy_cells = self.belief_speed * math.cos(self.belief_heading) / 60.0 * self.dt / cell_nm
+        predicted = shift(self.grid_p, shift=(dy_cells, dx_cells), order=1, mode="nearest", prefilter=False)
+        sigma_cells = (0.10 if self.curriculum_level <= 2 else 0.18) * math.sqrt(self.dt)
+        self.grid_p = self._normalise_probability(gaussian_filter(predicted, sigma=sigma_cells, mode="nearest"))
+
+    def _move_target(self) -> None:
+        if self.curriculum_level >= 3:
+            self.target_heading += float(self.np_random.normal(0.0, math.radians(1.5)))
+        distance = self.target_speed / 60.0 * self.dt
+        self.target_x += distance * math.sin(self.target_heading)
+        self.target_y += distance * math.cos(self.target_heading)
+        if self.target_x < self.min_x or self.target_x > self.max_x:
+            self.target_x = float(np.clip(self.target_x, self.min_x, self.max_x))
             self.target_heading = -self.target_heading
-            bounced = True
-        if self.target_y < -hh or self.target_y > hh:
-            self.target_y = float(np.clip(self.target_y, -hh, hh))
+        if self.target_y < self.min_y or self.target_y > self.max_y:
+            self.target_y = float(np.clip(self.target_y, self.min_y, self.max_y))
             self.target_heading = math.pi - self.target_heading
-            bounced = True
-        self.target_heading %= 2.0 * math.pi
-        self.target_bounced = bounced
 
-    def step(self, action):
-        rng = self._rng()
-        action = np.asarray(np.clip(action, -1.0, 1.0), dtype=np.float32)
-        prev_x, prev_y = self.helico_x, self.helico_y
-        self.helico_heading = (self.helico_heading + float(action[0]) * self.max_turn_rate_rad_step) % (2.0 * math.pi)
-        self.helico_speed = float(np.clip(self.helico_speed + float(action[1]) * (20.0 * self.dt / 60.0), 60.0, self.helico_max_speed))
-        distance = self.helico_speed / 60.0 * self.dt
-        self.helico_x += distance * math.sin(self.helico_heading)
-        self.helico_y += distance * math.cos(self.helico_heading)
-        self._move_target()
-        self.fuel_remaining -= self.dt
-        self.t += self.dt
+    def _fly_towards(self, waypoint_x: float, waypoint_y: float) -> None:
+        waypoint_x = float(np.clip(waypoint_x, self.min_x, self.max_x))
+        waypoint_y = float(np.clip(waypoint_y, self.min_y, self.max_y))
+        dx, dy = waypoint_x-self.helico_x, waypoint_y-self.helico_y
+        if abs(dx) + abs(dy) > 1e-9:
+            self.helico_heading = math.atan2(dx, dy)
+        self.current_speed = self.max_speed
+        distance = self.max_speed / 60.0 * self.dt
+        remaining = math.hypot(dx, dy)
+        travel = min(distance, remaining) if remaining > 0 else 0.0
+        self.helico_x += travel * math.sin(self.helico_heading)
+        self.helico_y += travel * math.cos(self.helico_heading)
 
-        xs = np.linspace(-self.search_area_width / 2.0, self.search_area_width / 2.0, self.grid_dim)
-        ys = np.linspace(-self.search_area_height / 2.0, self.search_area_height / 2.0, self.grid_dim)
-        xx, yy = np.meshgrid(xs, ys)
-        drift_x = self.datum_x + self.target_speed / 60.0 * self.t * math.sin(self.target_heading)
-        drift_y = self.datum_y + self.target_speed / 60.0 * self.t * math.cos(self.target_heading)
-        # Uncertainty expands slowly with time instead of remaining unrealistically fixed.
-        sigma = 5.0 + 0.15 * math.sqrt(max(0.0, self.t))
-        self.grid_p = np.exp(-0.5 * (((xx - drift_x) / sigma) ** 2 + ((yy - drift_y) / sigma) ** 2)).astype(np.float32)
-        self.grid_p /= np.sum(self.grid_p) + 1e-8
+    def _negative_scan_update(self) -> float:
+        dist = np.hypot(self.mesh_x-self.helico_x, self.mesh_y-self.helico_y)
+        pdet = np.clip(1.0 - dist/self.radar_range, 0.0, 0.9)
+        before = float((self.grid_p*pdet).sum())
+        self.grid_p = self._normalise_probability(self.grid_p * (1.0-pdet))
+        decay = math.exp(-math.log(2.0)*self.dt/20.0)
+        self.scan_memory *= decay
+        self.scan_memory[pdet > 0.05] = np.maximum(self.scan_memory[pdet > 0.05], pdet[pdet > 0.05]).astype(np.float32)
+        return before
 
-        decay = math.exp(-math.log(2.0) / 20.0 * self.dt)
-        self.grid_scanned *= decay
-        prev_scanned_mass = float(np.sum(self.grid_p * self.grid_scanned))
-        scanned_now = (np.hypot(xx - self.helico_x, yy - self.helico_y) <= self.radar_base_range).astype(np.float32)
-        self.grid_scanned = np.maximum(self.grid_scanned, scanned_now)
-        scanned_mass = float(np.sum(self.grid_p * self.grid_scanned))
-        information_gain = max(0.0, scanned_mass - prev_scanned_mass)
+    def expert_action(self) -> np.ndarray:
+        peak_x, peak_y = self._peak_position()
+        return np.array([
+            np.clip((peak_x-self.helico_x)/self.half_width, -1.0, 1.0),
+            np.clip((peak_y-self.helico_y)/self.half_height, -1.0, 1.0),
+        ], dtype=np.float32)
 
-        # Compute progress against the current, already-updated belief.
-        unscanned_p = self.grid_p * (1.0 - self.grid_scanned)
-        peak_j, peak_i = np.unravel_index(np.argmax(unscanned_p), unscanned_p.shape)
-        peak_x, peak_y = xs[peak_i], ys[peak_j]
-        progress = 5.0 * (math.hypot(peak_x - prev_x, peak_y - prev_y) - math.hypot(peak_x - self.helico_x, peak_y - self.helico_y))
-        reward = -self.penalty_time * self.dt + self.reward_exploration * information_gain + progress
-
-        dist_target = math.hypot(self.target_x - self.helico_x, self.target_y - self.helico_y)
-        p_det = 0.0
-        if dist_target <= self.radar_base_range:
-            p_det = max(0.0, 0.98 * (1.0 - (dist_target / self.radar_base_range) ** 2))
-        terminated = False
-        truncated = False
-        if dist_target < 0.8 or (p_det > 0.05 and rng.random() < p_det):
-            self.intercepted = True
-            reward += self.reward_detection
-            terminated = True
-
-        dist_frigate = math.hypot(self.helico_x - self.frigate_x, self.helico_y - self.frigate_y)
-        time_to_frigate = dist_frigate / self.helico_max_speed * 60.0
-        bingo_buffer = 15.0
-        if self.fuel_remaining < time_to_frigate:
-            self.bingo_failed = True
-            reward -= self.penalty_bingo
-            terminated = True
-        elif self.fuel_remaining < time_to_frigate + bingo_buffer:
-            heading_to_frigate = math.atan2(self.frigate_x - self.helico_x, self.frigate_y - self.helico_y)
-            angle_diff = abs((self.helico_heading - heading_to_frigate + math.pi) % (2.0 * math.pi) - math.pi)
-            reward -= 2.0 * angle_diff / math.pi
-
-        hw, hh = self.search_area_width / 2.0, self.search_area_height / 2.0
-        self.out_of_bounds = abs(self.helico_x) > hw or abs(self.helico_y) > hh
-        if self.out_of_bounds:
-            reward -= self.penalty_bingo
-            terminated = True
-        if self.fuel_remaining <= 0:
-            truncated = True
-
-        info = {
-            "intercepted": self.intercepted,
-            "bingo_failed": self.bingo_failed,
-            "out_of_bounds": self.out_of_bounds,
-            "target_bounced": self.target_bounced,
-            "dist_to_target": dist_target,
-            "fuel_remaining": self.fuel_remaining,
-            "information_gain": information_gain,
+    def _info(self, outcome: str, *, information_gain: float = 0.0, out_of_bounds: bool = False, bingo: bool = False) -> dict[str, Any]:
+        return {
+            "outcome": outcome,
+            "intercepted": outcome == "intercepted",
+            "safe_rtb": outcome == "safe_rtb",
+            "bingo_fail": bool(bingo),
+            "out_of_bounds": bool(out_of_bounds),
+            "information_gain": float(information_gain),
+            "fuel_margin": float(self._fuel_margin()),
+            "fuel_remaining": float(self.fuel_remaining),
+            "elapsed_min": float(self.elapsed_min),
         }
-        return self._get_obs(), float(reward), bool(terminated), bool(truncated), info
+
+    def step(self, action: np.ndarray):
+        action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
+        self.steps += 1
+        self.elapsed_min += self.dt
+        self._move_target()
+        self._predict_belief()
+
+        if self._fuel_margin() <= self.dt:
+            self.rtb_active = True
+
+        if self.rtb_active:
+            waypoint_x, waypoint_y = self.frigate_x, self.frigate_y
+        else:
+            waypoint_x = self.helico_x + float(action[0]) * self.half_width
+            waypoint_y = self.helico_y + float(action[1]) * self.half_height
+        self._fly_towards(waypoint_x, waypoint_y)
+        self.fuel_remaining = max(0.0, self.fuel_remaining-self.dt)
+
+        dist_target = math.hypot(self.target_x-self.helico_x, self.target_y-self.helico_y)
+        pdet_target = float(np.clip(1.0-dist_target/self.radar_range, 0.0, 0.95))
+        detected = dist_target < 0.8 or (pdet_target > 0.05 and self.np_random.random() < pdet_target)
+
+        if detected:
+            return self._get_obs(), float(self.reward_detection), True, False, self._info("intercepted")
+
+        information_gain = self._negative_scan_update()
+        reward = self.reward_probability*information_gain - self.penalty_time*self.dt
+
+        dist_frigate = math.hypot(self.helico_x-self.frigate_x, self.helico_y-self.frigate_y)
+        if self.rtb_active and dist_frigate <= self.rtb_radius:
+            return self._get_obs(), float(reward), True, False, self._info("safe_rtb", information_gain=information_gain)
+
+        out = not (self.min_x <= self.helico_x <= self.max_x and self.min_y <= self.helico_y <= self.max_y)
+        if out:
+            return self._get_obs(), float(reward-self.penalty_bingo), True, False, self._info("out_of_bounds", information_gain=information_gain, out_of_bounds=True)
+
+        bingo = self.fuel_remaining < self._return_time()
+        if bingo:
+            return self._get_obs(), float(reward-self.penalty_bingo), True, False, self._info("bingo", information_gain=information_gain, bingo=True)
+
+        truncated = self.steps >= self.max_steps or self.fuel_remaining <= 0.0
+        outcome = "time_limit" if truncated else "flying"
+        return self._get_obs(), float(reward), False, bool(truncated), self._info(outcome, information_gain=information_gain)

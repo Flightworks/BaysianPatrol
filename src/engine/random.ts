@@ -55,3 +55,37 @@ export function angleDiff(angle1: number, angle2: number): number {
   let diff = (angle2 - angle1 + 180) % 360 - 180;
   return diff < -180 ? diff + 360 : diff;
 }
+
+/** Deterministic PRNG used to make paired Monte-Carlo runs reproducible. */
+export class SeededRandom {
+  private state: number;
+  private spare: number | null = null;
+
+  constructor(seed: number) {
+    this.state = (Math.trunc(seed) >>> 0) || 0x6d2b79f5;
+  }
+
+  public uniform(): number {
+    this.state = (this.state + 0x6d2b79f5) >>> 0;
+    let value = this.state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  }
+
+  public gaussian(mean: number = 0, std: number = 1): number {
+    if (this.spare !== null) {
+      const result = this.spare;
+      this.spare = null;
+      return mean + std * result;
+    }
+    let u = this.uniform();
+    let v = this.uniform();
+    if (u <= 0) u = Number.MIN_VALUE;
+    if (v <= 0) v = Number.MIN_VALUE;
+    const magnitude = Math.sqrt(-2*Math.log(u));
+    const z0 = magnitude*Math.cos(2*Math.PI*v);
+    this.spare = magnitude*Math.sin(2*Math.PI*v);
+    return mean + std*z0;
+  }
+}

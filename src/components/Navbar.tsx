@@ -36,7 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <h1 className="text-base font-black tracking-tight text-white flex items-center space-x-2">
             <span>BAYESIAN PATROL</span>
             <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-950 border border-cyan-700/50 text-cyan-300">
-              Monte-Carlo v2.5
+              Monte-Carlo v2.3.1
             </span>
           </h1>
           <p className="text-[11px] text-slate-400">
