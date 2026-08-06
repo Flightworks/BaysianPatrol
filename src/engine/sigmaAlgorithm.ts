@@ -55,6 +55,7 @@ export class SIGMAPlanner {
           x: frigateX,
           y: frigateY,
           heading: currentHelico.heading,
+          speed: 0,
           fuelRemaining: Math.max(0, currentHelico.fuelRemaining - dtMinutes),
           status: 'BINGO_RETURN',
         };
@@ -69,6 +70,7 @@ export class SIGMAPlanner {
         x: currentHelico.x + distStep * Math.sin(rad),
         y: currentHelico.y + distStep * Math.cos(rad),
         heading: headingToFrigate,
+        speed: helicoMaxSpeed,
         fuelRemaining: Math.max(0, currentHelico.fuelRemaining - dtMinutes),
         status: 'BINGO_RETURN',
       };
@@ -105,6 +107,7 @@ export class SIGMAPlanner {
       x: nextX,
       y: nextY,
       heading: desiredHeading,
+      speed: helicoMaxSpeed,
       fuelRemaining: currentHelico.fuelRemaining - dtMinutes,
       status: 'SEARCHING',
     };

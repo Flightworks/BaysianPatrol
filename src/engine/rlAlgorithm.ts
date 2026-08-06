@@ -58,6 +58,7 @@ export class RLPlanner {
         x: newX,
         y: newY,
         heading: normalizedHeading,
+        speed: helicoMaxSpeed,
         fuelRemaining: Math.max(0, fuelRemaining),
         status,
       };
@@ -79,7 +80,7 @@ export class RLPlanner {
         // Channel 0: P(x,y,t)
         gridData[0 * gridDim * gridDim + j * gridDim + i] = cell.pBayesianEvolved;
         // Channel 1: Scanned mask
-        gridData[1 * gridDim * gridDim + j * gridDim + i] = cell.scanned ? 1.0 : 0.0;
+        gridData[1 * gridDim * gridDim + j * gridDim + i] = cell.scanMemory;
       }
     }
 
@@ -89,7 +90,7 @@ export class RLPlanner {
     const headingRad = (helico.heading * Math.PI) / 180.0;
     const headingSin = Math.sin(headingRad);
     const headingCos = Math.cos(headingRad);
-    const speedNorm = helicoMaxSpeed / 140.0;
+    const speedNorm = Math.max(0, Math.min(1, helico.speed / helicoMaxSpeed));
     const fuelRatio = helico.fuelRemaining / (this.config.helicoEndurance || 180.0);
     const distFrigateNorm = distToFrigate / searchAreaWidth;
     
@@ -146,8 +147,8 @@ export class RLPlanner {
     const deltaHeadingDeg = actionDeltaHeading * maxTurnRateDeg;
     const newHeading = (helico.heading + deltaHeadingDeg + 360) % 360;
 
-    const newSpeed = Math.min(helicoMaxSpeed, Math.max(60.0, helicoMaxSpeed * (0.8 + 0.2 * actionDeltaSpeed)));
-    const distStep = (newSpeed / 60.0) * dt;
+    const currentSpeed = Math.min(helicoMaxSpeed, Math.max(60.0, helicoMaxSpeed * (0.8 + 0.2 * actionDeltaSpeed)));
+    const distStep = (currentSpeed / 60.0) * dt;
 
     const newX = helico.x + distStep * Math.sin((newHeading * Math.PI) / 180.0);
     const newY = helico.y + distStep * Math.cos((newHeading * Math.PI) / 180.0);
@@ -158,6 +159,7 @@ export class RLPlanner {
       x: newX,
       y: newY,
       heading: newHeading,
+      speed: currentSpeed,
       fuelRemaining: Math.max(0, fuelRemaining),
       status: fuelRemaining <= 0 ? 'OUT_OF_FUEL' : 'SEARCHING',
     };
@@ -195,6 +197,7 @@ export class RLPlanner {
       x: helico.x + distStep * Math.sin((newHeading * Math.PI) / 180.0),
       y: helico.y + distStep * Math.cos((newHeading * Math.PI) / 180.0),
       heading: newHeading,
+      speed: newSpeed,
       fuelRemaining: Math.max(0, helico.fuelRemaining - dt),
       status: helico.fuelRemaining - dt <= 0 ? 'OUT_OF_FUEL' : 'SEARCHING',
     };

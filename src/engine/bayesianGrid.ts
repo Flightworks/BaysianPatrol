@@ -64,6 +64,7 @@ export class BayesianGrid {
           pBayesianEvolved: 0,
           pDet: 0,
           scanned: false,
+          scanMemory: 0,
         });
       }
       this.cells.push(row);
@@ -211,6 +212,7 @@ export class BayesianGrid {
     for (let i = 0; i < this.clearanceStandard.length; i++) {
       this.clearanceStandard[i] = 1.0 - (1.0 - this.clearanceStandard[i]) * decayFactor;
       this.clearanceEvolved[i] = 1.0 - (1.0 - this.clearanceEvolved[i]) * decayFactor;
+      this.cells[Math.floor(i / this.widthCells)][i % this.widthCells].scanMemory *= decayFactor;
     }
 
     // Aspect angle multiplier
@@ -234,6 +236,7 @@ export class BayesianGrid {
 
             if (pDetBase > 0) {
               cell.scanned = true;
+              cell.scanMemory = 1.0;
 
               // 1. Standard Bayesian Clearance
               this.clearanceStandard[idx] *= (1.0 - pDetBase);

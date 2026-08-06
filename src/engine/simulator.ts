@@ -50,6 +50,7 @@ export async function runSingleSimulationWithRealization(
     x: realization.frigateX,
     y: realization.frigateY,
     heading: 0,
+    speed: realization.helicoSpeed,
     fuelRemaining: helicoEndurance,
     status: 'SEARCHING',
   };

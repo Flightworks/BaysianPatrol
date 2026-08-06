@@ -62,6 +62,7 @@ export interface HelicopterState {
   x: number;
   y: number;
   heading: number;
+  speed: number; // current speed in knots
   fuelRemaining: number; // minutes of flight left
   status: HelicopterStatus;
 }
@@ -168,4 +169,5 @@ export interface GridCell {
   pBayesianEvolved: number;
   pDet: number;
   scanned: boolean;
+  scanMemory: number;
 }
