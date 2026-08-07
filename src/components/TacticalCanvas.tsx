@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import type { ScenarioConfig, MonteCarloRunResult, GridMode } from '../types/simulation';
 import { getRadarFootprintContour } from '../engine/radarModel';
-import { Eye, EyeOff, Layers, ZoomIn, ZoomOut, RotateCcw, Activity, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Layers, ZoomIn, ZoomOut, RotateCcw, Activity } from 'lucide-react';
 
 interface TacticalCanvasProps {
   config: ScenarioConfig;
@@ -68,7 +68,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
     const height = canvas.height;
 
     // Fast GPU fill background
-    ctx.fillStyle = '#030712'; // Slate 950
+    ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
     // Coordinate conversion NM -> Canvas pixels
@@ -248,7 +248,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
         ctx.fillStyle = '#fef3c7';
         ctx.font = 'bold 10px sans-serif';
-        ctx.fillText(`HÉLICO NAÏF (${currentNaive.status})`, naivePxX + 10, naivePxY + 12);
+        ctx.fillText(`RÂTEAU IAMSAR (${currentNaive.status})`, naivePxX + 10, naivePxY + 20);
       }
     }
 
@@ -302,7 +302,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
         ctx.fillStyle = '#d1fae5';
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText(`HÉLICO SIGMA (${currentSigma.status})`, sigmaPxX + 10, sigmaPxY - 8);
+        ctx.fillText(`RECHERCHE BAYÉSIENNE (${currentSigma.status})`, sigmaPxX + 10, sigmaPxY - 14);
       }
     }
 
@@ -356,7 +356,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
         ctx.fillStyle = '#f3e8ff';
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText(`HÉLICO RL (PPO) (${currentRl.status})`, rlPxX + 10, rlPxY + 4);
+        ctx.fillText(`STRATÉGIE HYBRIDE (${currentRl.status})`, rlPxX + 10, rlPxY + 4);
       }
     }
 
@@ -465,6 +465,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
     config,
     selectedSigmaRun,
     selectedNaiveRun,
+    selectedRlRun,
     currentPlaybackTime,
     showTargetGroundTruth,
     showAllRunsOverlay,
@@ -489,7 +490,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
   const handleMouseUp = () => setIsDragging(false);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full min-h-[520px] rounded-xl overflow-hidden glass-panel">
+    <div ref={containerRef} className="tactical-canvas-shell">
       {/* Canvas */}
       <canvas
         ref={canvasRef}
@@ -500,10 +501,10 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
       />
 
       {/* Floating Canvas Controls: 3-Way Grid Selector */}
-      <div className="absolute top-3 left-3 flex flex-wrap items-center gap-2 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg p-1.5 z-10 text-xs shadow-xl">
+      <div className="tactical-toolbar absolute top-3 left-3 flex flex-wrap items-center gap-2 p-1.5 z-10 text-xs">
         <span className="text-[11px] font-bold text-slate-400 pl-1 flex items-center space-x-1">
           <Activity className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Grille:</span>
+          <span>Couche:</span>
         </span>
 
         <button
@@ -513,9 +514,9 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
               ? 'bg-amber-600 text-slate-950 font-bold shadow-md'
               : 'bg-slate-800 text-slate-400 hover:text-slate-200'
           }`}
-          title="Grille Classique A Priori"
+          title="Incertitude initiale au datum"
         >
-          1. Classique (A Priori)
+          Datum initial
         </button>
 
         <button
@@ -525,22 +526,21 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
               ? 'bg-cyan-600 text-white font-bold shadow-md'
               : 'bg-slate-800 text-slate-400 hover:text-slate-200'
           }`}
-          title="Grille Bayésienne Standard"
+          title="Propagation de l'incertitude dans le temps"
         >
-          2. Bayésienne Standard
+          Propagation
         </button>
 
         <button
           onClick={() => setGridMode('BAYESIAN_EVOLVED')}
           className={`flex items-center space-x-1 px-2.5 py-1 rounded font-semibold transition-all cursor-pointer ${
             gridMode === 'BAYESIAN_EVOLVED'
-              ? 'bg-gradient-to-r from-emerald-600 to-cyan-600 text-white font-bold shadow-md green-glow'
+              ? 'bg-cyan-700 text-white font-bold'
               : 'bg-slate-800 text-slate-400 hover:text-slate-200'
           }`}
-          title="Grille Bayésienne Évoluée (Bonus Attaque Perpendiculaire)"
+          title="Estimation tactique utilisée pendant la recherche"
         >
-          <Sparkles className="w-3 h-3 text-emerald-300" />
-          <span>3. Bayésienne Évoluée (Perpendiculaire)</span>
+          <span>Estimation active</span>
         </button>
 
         <div className="h-4 w-px bg-slate-800 mx-1" />
@@ -566,15 +566,21 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
-          <span>Superposer {allRuns?.length || 0} Runs</span>
+          <span>Ensemble des trajectoires</span>
         </button>
       </div>
 
       {/* Dynamic Comparison Legend Badge (SIGMA Green vs Naïve Amber) */}
-      <div className="absolute bottom-3 left-3 z-10 flex items-center space-x-3 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono shadow-xl">
+      <div className="tactical-legend absolute bottom-3 left-3 z-10 flex items-center space-x-3 px-3 py-1.5 text-xs font-mono">
         <div className="flex items-center space-x-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500" />
-          <span className="text-emerald-300 font-bold">POMDP (Bayésien)</span>
+          <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
+          <span className="text-purple-300 font-bold">Hybride 2027</span>
+          {selectedRlRun && <span className="text-[10px] text-slate-400">({selectedRlRun.intercepted ? `${selectedRlRun.interceptionTime.toFixed(0)} min` : selectedRlRun.outcome})</span>}
+        </div>
+        <div className="h-3.5 w-px bg-slate-700" />
+        <div className="flex items-center space-x-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+          <span className="text-emerald-300 font-bold">Bayésien</span>
           {selectedSigmaRun && (
             <span className="text-[10px] text-slate-400">
               ({selectedSigmaRun.intercepted ? `${selectedSigmaRun.interceptionTime.toFixed(0)} min` : 'Bingo'})
@@ -585,8 +591,8 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
         <div className="h-3.5 w-px bg-slate-800" />
 
         <div className="flex items-center space-x-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500" />
-          <span className="text-amber-300 font-bold">Naïf (Râteau)</span>
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+          <span className="text-amber-300 font-bold">Râteau IAMSAR</span>
           {selectedNaiveRun && (
             <span className="text-[10px] text-slate-400">
               ({selectedNaiveRun.intercepted ? `${selectedNaiveRun.interceptionTime.toFixed(0)} min` : 'Bingo'})
@@ -596,7 +602,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
       </div>
 
       {/* Zoom / Pan Controls */}
-      <div className="absolute bottom-3 right-3 flex items-center space-x-1 bg-slate-900/85 border border-slate-800 rounded-lg p-1 z-10">
+      <div className="tactical-zoom absolute bottom-3 right-3 flex items-center space-x-1 p-1 z-10">
         <button
           onClick={() => setZoom((z) => Math.min(3.0, z * 1.2))}
           className="p-1.5 hover:bg-slate-800 text-slate-300 rounded cursor-pointer"

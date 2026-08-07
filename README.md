@@ -1,74 +1,67 @@
-# 🚁 BaysianPatrol - Recherche Maritime Optimisée par RL & Analyse Bayésienne
+# Baysian Patrol 2.4
 
-**BaysianPatrol** est un simulateur de Recherche et Sauvetage Maritime (SAR) permettant d'évaluer et de comparer 3 stratégies de patrouille pour hélicoptère embarqué face à une cible stochastique sous incertitude spatio-temporelle (**Datum**).
+Simulateur maritime de recherche et d’interception permettant de comparer trois stratégies sur exactement les mêmes situations Monte-Carlo.
 
----
+## Les trois stratégies
 
-## 📖 Mode d'Emploi Simple
+1. **Stratégie hybride 2027** — modèle qualifié choisissant un waypoint relatif, avec pilote automatique, geofence et retour carburant déterministes.
+2. **Recherche bayésienne** — planification à partir d’une croyance probabiliste mise à jour pendant la mission.
+3. **Balayage parallèle IAMSAR** — recherche en râteau déterministe : départ à un demi-espacement de piste du bord, branches parallèles au grand côté et espacement lié à la portée radar.
 
-### 1️⃣ Lancer l'Application Web (Visualisation & Dashboard)
+Chaque comparaison utilise la même cible, la même météo, la même position de frégate et les mêmes tirages de détection pour les trois stratégies.
 
-#### Étape A : Installer les dépendances Node.js (première fois uniquement)
+## Workflow de démonstration
+
 ```bash
 npm install
-```
-
-#### Étape B : Démarrer le serveur web local
-```bash
 npm run dev
 ```
-👉 Ouvrez votre navigateur sur **`http://localhost:5173`**
 
-#### Étape C : Lancer le Comparatif 3-Voies
-1. Dans le panneau latéral gauche (**Configuration de la Simulation Stochastique**), défilez jusqu'à **Contrôles Monte-Carlo**.
-2. Dans le menu déroulant **Comparaison Stratégie**, choisissez :
-   `🏆 COMPARATIF TRIO (Naïve vs AMI vs RL PPO)`
-3. Cliquez sur le bouton bleu **"Lancer Simulation Monte-Carlo"** dans la barre supérieure.
-4. Cliquez sur l'onglet **"Tableau de Bord Statistique"** (en haut à droite de la carte) pour comparer les taux de réussite, le temps moyen et le carburant consommé.
+Ouvrir `http://localhost:5173`, puis :
 
----
+1. choisir un scénario, le nombre de tirages et la seed ;
+2. lancer la campagne depuis l’onglet **Comparaison** ;
+3. comparer détection, temps d’interception, carburant, retours sûrs et violations Bingo ;
+4. rejouer un tirage dans **Carte tactique** ;
+5. retrouver les vingt derniers résumés dans **Historique**.
 
-### 2️⃣ Entraîner le Modèle RL (Apprentissage par Renforcement Python)
+Le modèle actif est toujours la stratégie hybride qualifiée en 2027. L’interface métier ne propose ni sélection de modèle, ni entraînement, ni réglages PPO.
 
-#### Étape A : Installer les dépendances Python
-```bash
-pip install -r python/requirements.txt
+## Carte tactique
+
+La carte superpose les trois trajectoires sur un fond noir. Elle permet d’afficher :
+
+- le datum initial ;
+- la propagation de l’incertitude ;
+- l’estimation tactique active ;
+- la vérité terrain, désactivée par défaut ;
+- l’ensemble des trajectoires d’une campagne.
+
+## Historique local
+
+Les vingt dernières campagnes sont stockées dans le navigateur avec leurs paramètres et leurs statistiques compactes. Les trajectoires détaillées ne sont pas conservées afin de limiter le volume de stockage.
+
+## Architecture de sécurité
+
+Python/Gymnasium reste la référence canonique. Le modèle ne pilote pas directement le cap ou la vitesse :
+
+```text
+modèle hybride → waypoint relatif → pilote automatique → geofence → superviseur carburant/RTB
 ```
 
-#### Étape B : Lancer l'entraînement PPO
+Un retour normal est publié comme `SAFE_RTB`. Les violations Bingo, pannes carburant et limites de temps restent des résultats distincts.
+
+## Vérification
+
 ```bash
-python python/train.py
+# Contrat Python
+python -m unittest discover -s python/tests -v
+
+# Contrats TypeScript, historique et râteau IAMSAR
+node --experimental-strip-types --test tests-ts/*.test.ts
+
+# Production web
+npm run build
 ```
-*Le modèle entraîné est automatiquement exporté au format ONNX dans `public/models/baysian_patrol_policy.onnx` pour être utilisable directement dans l'interface Web.*
 
-#### Étape C : Suivre les courbes d'apprentissage en direct (TensorBoard)
-```bash
-tensorboard --logdir python/tensorboard_logs
-```
-👉 Ouvrez **`http://localhost:6006`** dans votre navigateur pour suivre les courbes de récompense et d'interception.
-
----
-
-## 📊 Les 3 Stratégies Comparées
-
-1. **📐 Option 1 : Naïve (IAMSAR)** — Râteau de recherche géométrique classique à balayage parallèle.
-2. **⚡ Option 2 : Bayésienne AMI (POMDP)** — Solveur algorithmique maximisant le gradient de croyance bayésienne $P(x,y,t)$ à chaque pas de temps.
-3. **🤖 Option 3 : Modèle RL SIGMA (PPO)** — Réseau de neurones hybride (CNN 2D + Perceptron) inférant le cap et la vitesse optimaux avec masquage de sécurité **Bingo Fuel**.
-
----
-
-## 🛠️ Commandes Utiles
-
-- **Valider le build de production Web** :
-  ```bash
-  npm run build
-  ```
-- **Exécuter les tests unitaires de l'environnement RL** :
-  ```bash
-  python python/tests/test_env.py
-  ```
-- **Re-générer le modèle ONNX de base** :
-  ```bash
-  python python/export_onnx.py
-  ```
-- **Spécification technique complète pour agent AI** : Voir [`AGENTS.md`](AGENTS.md)
+La procédure complète d’entraînement, d’export ONNX et de qualification est documentée dans [`AGENTS.md`](AGENTS.md).
