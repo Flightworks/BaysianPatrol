@@ -27,6 +27,18 @@ Ouvrir `http://localhost:5173`, puis :
 
 Le modèle actif est toujours la stratégie hybride qualifiée en 2027. L’interface métier ne propose ni sélection de modèle, ni entraînement, ni réglages PPO.
 
+## Comment le modèle a été entraîné
+
+Le modèle n’a pas appris seul en prenant des risques dans le monde réel. Il a appris dans un simulateur, en trois temps :
+
+1. imiter un expert qui choisit la zone la plus probable ;
+2. essayer d’améliorer ses décisions avec PPO ;
+3. conserver la version la plus sûre après comparaison sur 500 situations inédites.
+
+Les trois entraînements indépendants ont retenu la version par imitation (Behavior Cloning), avec 500 interceptions sur 500, zéro Bingo et zéro sortie de zone. La stratégie active de l’application est cette version qualifiée avec la seed 2027.
+
+L’explication complète, destinée aux lecteurs non spécialistes, se trouve dans [`docs/rl-explique-aux-profanes.md`](docs/rl-explique-aux-profanes.md).
+
 ## Carte tactique
 
 La carte superpose les trois trajectoires sur un fond noir. Elle permet d’afficher :
@@ -64,4 +76,4 @@ node --experimental-strip-types --test tests-ts/*.test.ts
 npm run build
 ```
 
-La procédure complète d’entraînement, d’export ONNX et de qualification est documentée dans [`AGENTS.md`](AGENTS.md).
+La procédure complète d’entraînement, d’export ONNX et de qualification est décrite dans [`docs/rl-explique-aux-profanes.md`](docs/rl-explique-aux-profanes.md). Les détails de travail et les contrats internes restent dans [`AGENTS.md`](AGENTS.md).
