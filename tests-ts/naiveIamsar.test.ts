@@ -3,73 +3,93 @@ import assert from 'node:assert/strict';
 import { buildParallelSweepPlan } from '../src/engine/iamsarPattern.ts';
 import type { ScenarioConfig } from '../src/types/simulation.ts';
 
-const config: ScenarioConfig = {
+export const config: ScenarioConfig = {
   searchAreaWidth: 60,
   searchAreaHeight: 40,
   searchAreaCenterX: 0,
   searchAreaCenterY: 0,
-  datumX: -15,
-  datumY: -15,
+  datumX: 10,
+  datumY: 0,
   sigmaDatumX: 3,
   sigmaDatumY: 3,
-  meanHeading: 45,
-  meanSpeed: 16,
+  meanHeading: 0,
+  meanSpeed: 30,
   sigmaT: 10,
   sigmaHeading: 15,
   sigmaSpeed: 4,
-  windDirection: 270,
-  windSpeed: 15,
-  sigmaWindSpeed: 4,
-  sigmaWindDirection: 15,
-  frigateX: 25,
-  frigateY: -18,
+  windDirection: 0,
+  windSpeed: 0,
+  sigmaWindSpeed: 0,
+  sigmaWindDirection: 0,
+  frigateX: 0,
+  frigateY: -20,
   sigmaFrigatePosition: 0,
-  helicoMaxSpeed: 130,
+  helicoMaxSpeed: 120,
   sigmaHelicoSpeed: 0,
   helicoEndurance: 180,
   bingoFuelBuffer: 20,
   sigmaRouteDrift: 3,
   sigmaSpeedDrift: 1,
   radarBaseRange: 12,
-  gridCellSize: 0.5,
+  gridCellSize: 1,
   dt: 1,
   numIterations: 250,
   strategy: 'TRIO',
 };
 
-test('IAMSAR parallel sweep remains half a track spacing inside the search area', () => {
-  const plan = buildParallelSweepPlan(config);
-  const minX = -config.searchAreaWidth / 2;
-  const maxX = config.searchAreaWidth / 2;
-  const minY = -config.searchAreaHeight / 2;
-  const maxY = config.searchAreaHeight / 2;
+const headingOf = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+  (Math.atan2(b.x - a.x, b.y - a.y) * 180 / Math.PI + 360) % 360;
 
-  assert.ok(plan.trackSpacing > 0);
-  assert.ok(plan.waypoints.length >= 4);
-  for (const point of plan.waypoints) {
-    assert.ok(point.x > minX && point.x < maxX);
-    assert.ok(point.y > minY && point.y < maxY);
-  }
-  assert.ok(Math.abs(plan.waypoints[0].x - (maxX - plan.trackSpacing / 2)) < 1e-9);
-  assert.ok(Math.abs(plan.waypoints[0].y - (minY + plan.trackSpacing / 2)) < 1e-9);
+const axialDifference = (a: number, b: number) => {
+  const delta = Math.abs(a - b) % 180;
+  return Math.min(delta, 180 - delta);
+};
+
+test('IAMSAR sweep is anchored on the datum propagated during helicopter transit', () => {
+  const plan = buildParallelSweepPlan(config);
+  const transitHours = Math.hypot(config.datumX - config.frigateX, config.datumY - config.frigateY)
+    / config.helicoMaxSpeed;
+
+  assert.ok(Math.abs(plan.estimatedCenter.x - config.datumX) < 1e-9);
+  assert.ok(Math.abs(plan.estimatedCenter.y - (config.datumY + config.meanSpeed * transitHours)) < 1e-9);
+
+  const centerFallsOnALeg = plan.waypoints.some((point, index) => {
+    if (index % 2 !== 0) return false;
+    const next = plan.waypoints[index + 1];
+    if (!next) return false;
+    const legLength = Math.hypot(next.x - point.x, next.y - point.y);
+    const splitLength = Math.hypot(plan.estimatedCenter.x - point.x, plan.estimatedCenter.y - point.y)
+      + Math.hypot(next.x - plan.estimatedCenter.x, next.y - plan.estimatedCenter.y);
+    return Math.abs(splitLength - legLength) < 1e-6;
+  });
+  assert.equal(centerFallsOnALeg, true);
 });
 
-test('IAMSAR parallel sweep alternates long parallel legs with constant short shifts', () => {
-  const plan = buildParallelSweepPlan(config);
-  const points = plan.waypoints;
-  const longLegs: number[] = [];
-  const shifts: number[] = [];
+test('IAMSAR long legs are perpendicular to estimated mobile route and remain in Airplan', () => {
+  const routedConfig = { ...config, meanHeading: 35 };
+  const plan = buildParallelSweepPlan(routedConfig);
+  const expectedLegHeading = (routedConfig.meanHeading + 90) % 360;
+  const minX = routedConfig.searchAreaCenterX - routedConfig.searchAreaWidth / 2;
+  const maxX = routedConfig.searchAreaCenterX + routedConfig.searchAreaWidth / 2;
+  const minY = routedConfig.searchAreaCenterY - routedConfig.searchAreaHeight / 2;
+  const maxY = routedConfig.searchAreaCenterY + routedConfig.searchAreaHeight / 2;
 
-  for (let index = 1; index < points.length; index += 1) {
-    const dx = Math.abs(points[index].x - points[index - 1].x);
-    const dy = Math.abs(points[index].y - points[index - 1].y);
-    if (dx > dy) longLegs.push(dx);
-    else if (dy > 0) shifts.push(dy);
+  assert.ok(axialDifference(plan.legHeadingDeg, expectedLegHeading) < 1e-9);
+  assert.ok(plan.waypoints.length >= 4);
+
+  for (let index = 0; index < plan.waypoints.length; index += 2) {
+    const start = plan.waypoints[index];
+    const end = plan.waypoints[index + 1];
+    assert.ok(end);
+    assert.ok(axialDifference(headingOf(start, end), expectedLegHeading) < 1e-6);
   }
 
-  assert.ok(longLegs.length >= 2);
-  assert.ok(longLegs.every((length) => Math.abs(length - longLegs[0]) < 1e-9));
-  assert.ok(shifts.every((length) => length <= plan.trackSpacing + 1e-9));
-  assert.equal(Math.sign(points[1].x - points[0].x), -1);
-  assert.equal(Math.sign(points[3].x - points[2].x), 1);
+  for (const point of plan.waypoints) {
+    assert.ok(point.x >= minX && point.x <= maxX);
+    assert.ok(point.y >= minY && point.y <= maxY);
+  }
+});
+
+test('IAMSAR sweep is deterministic for an identical mission estimate', () => {
+  assert.deepEqual(buildParallelSweepPlan(config), buildParallelSweepPlan(config));
 });

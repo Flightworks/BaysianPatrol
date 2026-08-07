@@ -4,9 +4,9 @@ Simulateur maritime de recherche et d’interception permettant de comparer troi
 
 ## Les trois stratégies
 
-1. **Stratégie hybride 2027** — modèle qualifié choisissant un waypoint relatif, avec pilote automatique, geofence et retour carburant déterministes.
-2. **Recherche bayésienne** — planification à partir d’une croyance probabiliste mise à jour pendant la mission.
-3. **Balayage parallèle IAMSAR** — recherche en râteau déterministe : départ à un demi-espacement de piste du bord, branches parallèles au grand côté et espacement lié à la portée radar.
+1. **Stratégie hybride 2027** — le modèle choisit une direction tactique ; l’exécuteur conserve ce choix sur une branche minimale cohérente avec la portée radar.
+2. **Recherche bayésienne** — choisit un corridor à forte probabilité encore peu couvert, puis termine une branche avant de recalculer.
+3. **Balayage parallèle inspiré IAMSAR** — propage le datum pendant le transit et oriente les branches perpendiculairement à la route estimée du mobile, avec un espacement lié à la portée radar.
 
 Chaque comparaison utilise la même cible, la même météo, la même position de frégate et les mêmes tirages de détection pour les trois stratégies.
 
@@ -41,13 +41,13 @@ L’explication complète, destinée aux lecteurs non spécialistes, se trouve d
 
 ## Carte tactique
 
-La carte superpose les trois trajectoires sur un fond noir. Elle permet d’afficher :
+La carte superpose les trois trajectoires sur un fond noir. Ses couches probabilistes sont :
 
-- le datum initial ;
-- la propagation de l’incertitude ;
-- l’estimation tactique active ;
-- la vérité terrain, désactivée par défaut ;
-- l’ensemble des trajectoires d’une campagne.
+- **Prévision de route** : position probable issue du datum, de la route estimée et de la dérive, sans effet des balayages radar ;
+- **Posterior radar** : prévision corrigée après les non-détections ; une zone balayée perd de la probabilité ;
+- **Posterior tactique** : posterior radar ajusté selon l’efficacité du capteur et l’angle d’approche.
+
+La vérité terrain est désactivée par défaut. La dispersion des trajectoires cibles Monte-Carlo n’est accessible que lorsque la vérité terrain est volontairement affichée.
 
 ## Historique local
 

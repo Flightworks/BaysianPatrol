@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { MonteCarloRunResult } from '../types/simulation';
 import { Eye, EyeOff, Pause, Play, RotateCcw, SkipForward } from 'lucide-react';
+import { getPlaybackEndTime, interpolatePathAtTime } from '../engine/playback';
 
 interface PlaybackControlProps {
   runs: MonteCarloRunResult[];
@@ -30,7 +31,7 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(2);
   const currentRun = runs[selectedRunIndex] ?? runs[0];
-  const maxTime = currentRun ? Math.max(...currentRun.helicoPath.map((point) => point.t), ...currentRun.targetPath.map((point) => point.t), 120) : 180;
+  const maxTime = currentRun ? getPlaybackEndTime(currentRun.helicoPath, currentRun.targetPath) : 0;
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -48,7 +49,7 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
 
   if (!currentRun) return null;
   const helico = currentRun.helicoPath.find((point) => point.t >= currentTime) ?? currentRun.helicoPath.at(-1);
-  const target = currentRun.targetPath.find((point) => point.t >= currentTime) ?? currentRun.targetPath.at(-1);
+  const target = interpolatePathAtTime(currentRun.targetPath, currentTime);
   const distance = helico && target ? Math.hypot(helico.x - target.x, helico.y - target.y) : null;
 
   return (
