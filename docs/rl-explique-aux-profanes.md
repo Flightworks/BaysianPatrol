@@ -1,217 +1,142 @@
-# Comment la stratégie hybride a été entraînée
+# Stratégie hybride et campagnes Monte-Carlo
 
-## En une phrase
+## À quoi sert le simulateur ?
 
-Le modèle a appris à rechercher une cible maritime en observant les décisions d'un pilote automatique expert dans un simulateur, puis il a été testé dans des situations nouvelles. Il n'a jamais eu le droit de sacrifier la sécurité pour gagner du temps.
+Baysian Patrol compare trois façons de rechercher une cible maritime :
 
-Le terme "RL" signifie *Reinforcement Learning*, ou apprentissage par renforcement. Dans ce projet, le modèle n'a pas appris seul depuis zéro. La méthode utilisée est hybride :
+- la stratégie hybride issue de l'apprentissage ;
+- la recherche bayésienne ;
+- le balayage parallèle en râteau inspiré IAMSAR.
 
-1. on lui montre d'abord de bons exemples ;
-2. il essaie ensuite de faire mieux dans le simulateur ;
-3. on ne conserve sa version améliorée que si elle reste au moins aussi sûre.
+L'objectif n'est pas de produire une jolie trajectoire. Il faut mesurer, dans les mêmes conditions, le taux de détection, le temps d'interception, la consommation de carburant et les retours sûrs.
 
----
+## Monte-Carlo, en pratique
 
-## L'analogie du pilote élève
+Une simulation unique ne suffit pas. Le résultat dépend toujours de paramètres qui varient d'une mission à l'autre :
 
-Imaginez un élève pilote dans un simulateur de vol.
+- position initiale du datum et de la frégate ;
+- position réelle de la cible ;
+- vent et dérive ;
+- vitesse et cap de la cible ;
+- tirages de détection radar.
 
-- Le simulateur lui donne une situation : position de l'hélicoptère, météo, carburant et zone où la cible a le plus de chances de se trouver.
-- Un pilote expert indique une décision raisonnable.
-- L'élève essaie de reproduire cette décision.
-- Ensuite, l'élève s'entraîne seul et reçoit une bonne note lorsqu'il détecte la cible, mais une très mauvaise note s'il met l'hélicoptère en danger.
-- Un instructeur compare enfin l'élève avec la version précédente sur une série de situations inconnues.
-
-Baysian Patrol suit exactement cette logique, avec une différence importante : le modèle ne commande pas directement le cap et la vitesse. Il indique un **point vers lequel chercher**. Un pilote automatique déterministe effectue ensuite le déplacement.
+Une campagne Monte-Carlo répète donc la mission un grand nombre de fois. À chaque répétition, le simulateur tire une nouvelle situation plausible, puis rejoue les trois stratégies.
 
 ```text
-situation observée
-        ↓
-modèle hybride : "cherche vers ce point"
-        ↓
-waypoint relatif
-        ↓
-pilote automatique
-        ↓
-limites de zone + surveillance carburant + retour sûr
+seed de campagne
+      ↓
+250 situations reproductibles
+      ↓
+chaque situation est jouée par les 3 stratégies
+      ↓
+statistiques : détection, temps, carburant, sécurité
 ```
 
-Cette séparation évite qu'une sortie aberrante du modèle commande directement une manœuvre dangereuse.
+### Pourquoi une seed ?
 
----
+La seed est le point de départ du générateur aléatoire. Avec la même seed, on retrouve les mêmes situations. Cela permet de comparer les stratégies équitablement : elles rencontrent la même météo, la même cible et les mêmes tirages radar.
 
-## Ce que le modèle voit
+La campagne n'est donc pas « au hasard » au sens d'un résultat impossible à refaire. Elle est aléatoire dans la construction des cas, mais reproductible pour l'analyse.
 
-À chaque étape, le modèle reçoit deux types d'information :
+### Comment lire une campagne ?
 
-- une carte de probabilité : les endroits où la cible est probablement présente, ainsi que la mémoire des zones déjà balayées ;
-- quelques informations de situation : position de l'hélicoptère, direction, vitesse, carburant disponible, position de la frégate, position de la zone probable et niveau d'incertitude.
+- **Taux de détection** : proportion des missions où la cible est interceptée.
+- **Temps moyen** : durée moyenne des interceptions réussies.
+- **Retour sûr** : l'hélicoptère retourne à la frégate avant d'atteindre le Bingo carburant.
+- **Violation Bingo** : la marge nécessaire au retour n'était plus disponible.
+- **Sortie de zone** : l'hélicoptère a quitté la zone de recherche autorisée.
+- **Borne inférieure de Wilson** : estimation prudente du taux de réussite, utile quand le nombre de cas reste limité.
 
-La carte n'est pas figée. Si le temps passe sans détection, la zone probable se déplace et s'élargit. Le modèle doit donc chercher dans une incertitude vivante, pas dans un simple cercle dessiné une fois pour toutes.
+Un bon résultat ne se résume donc pas au taux de détection. Une stratégie légèrement plus lente mais sans Bingo peut être préférable à une stratégie rapide qui met l'aéronef en difficulté.
 
-### Ce que le modèle produit
+## Comment le modèle a appris
 
-Le modèle produit deux nombres compris entre -1 et 1. Ils représentent une direction relative dans la zone de recherche. Ces deux nombres deviennent un waypoint.
+Le modèle actif n'a pas appris seul dans le monde réel. Il a été entraîné dans l'environnement canonique Python/Gymnasium, qui simule la cible, l'incertitude, le radar, le carburant et le retour vers la frégate.
 
-Il ne produit pas directement :
+### 1. Un expert fournit les exemples
 
-- un ordre de virage moteur par moteur ;
-- une vitesse dangereuse ;
-- une autorisation d'entrer dans une zone interdite ;
-- une permission de dépasser la réserve de retour.
+L'expert est une règle déterministe : il se dirige vers la zone où la probabilité de présence est la plus forte, tout en respectant les contraintes du simulateur.
 
-Ces protections restent hors du réseau et sont donc prévisibles.
+Le programme collecte 500 épisodes d'exemple en augmentant progressivement la difficulté : cible immobile, cible mobile, incertitude plus large et mouvements plus difficiles.
 
----
+### 2. Le modèle apprend par imitation
 
-## Étape 1 : construire un expert
+Cette étape s'appelle Behavior Cloning. Le modèle reçoit :
 
-L'expert n'est pas un autre réseau neuronal. C'est une règle de décision calculée dans l'environnement Gymnasium : il regarde le sommet de la probabilité actuelle et propose de se diriger vers cette zone.
+- une carte de probabilité et de zones déjà observées ;
+- la position, le cap, la vitesse et le carburant ;
+- la position de la frégate et le niveau d'incertitude.
 
-L'environnement applique ensuite les règles de mission :
+Il apprend à produire une décision proche de celle de l'expert. La décision est un **waypoint relatif**, c'est-à-dire un point vers lequel chercher, et non une commande directe de moteur ou de gouverne.
 
-- évolution de la cible ;
-- déplacement et élargissement de la croyance ;
-- détection radar ;
-- consommation de carburant ;
-- géofence ;
-- retour vers la frégate lorsque la marge devient insuffisante.
+### 3. PPO affine le comportement
 
-Cet expert fournit des exemples reproductibles. Le programme collecte **500 épisodes de démonstration**, en faisant varier progressivement la difficulté : cible immobile, cible mobile, incertitude plus forte et mouvements plus difficiles.
+PPO est une méthode d'apprentissage par renforcement. Le modèle essaie des décisions dans le simulateur et reçoit une note :
 
-Chaque exemple contient :
+- détection : récompense importante ;
+- réduction de l'incertitude : récompense utile ;
+- temps consommé : petite pénalité ;
+- Bingo ou sortie de zone : forte pénalité.
+
+L'apprentissage se fait sur quatre niveaux de difficulté, avec 50 000 étapes par niveau. PPO produit un candidat, mais ce candidat n'est pas accepté automatiquement.
+
+### 4. La sécurité décide
+
+Le modèle Behavior Cloning et le candidat PPO sont rejoués sur les mêmes 500 seeds fixes. Le choix suit cet ordre :
+
+1. zéro Bingo ;
+2. zéro sortie de zone ;
+3. meilleur taux de réussite prudent, calculé avec la borne de Wilson à 95 % ;
+4. meilleur temps moyen.
+
+Les trois entraînements indépendants, seeds 2026, 2027 et 2028, ont tous retenu Behavior Cloning :
+
+| seed | résultat | détection | Bingo | sorties de zone | temps moyen |
+|---:|---|---:|---:|---:|---:|
+| 2026 | Behavior Cloning | 500/500 | 0 | 0 | 9,610 min |
+| 2027 | Behavior Cloning | 500/500 | 0 | 0 | 9,608 min |
+| 2028 | Behavior Cloning | 500/500 | 0 | 0 | 9,596 min |
+
+La stratégie active de l'application est donc la version Behavior Cloning seed 2027. Le choix n'est pas laissé à l'utilisateur pendant une campagne.
+
+## Ce que le réseau ne peut pas faire
+
+Le réseau propose une direction de recherche, mais il ne pilote pas directement l'aéronef. Le moteur conserve les protections suivantes :
 
 ```text
-ce que l'hélicoptère voyait → le waypoint choisi par l'expert
+modèle → waypoint relatif → pilote automatique → geofence → contrôle carburant/RTB
 ```
 
----
-
-## Étape 2 : Behavior Cloning, ou imitation
-
-Le *Behavior Cloning* est une forme d'apprentissage supervisé. Le modèle reçoit les exemples de l'expert et ajuste ses paramètres pour produire des waypoints proches de ceux-ci.
-
-C'est comparable à un élève qui étudie 500 vols annotés avant de prendre les commandes.
-
-Dans le pipeline utilisé :
-
-- le modèle commence avec une architecture capable de lire la carte et les informations de situation ;
-- il apprend pendant **20 passages** sur les exemples ;
-- l'erreur mesurée compare le waypoint produit avec celui de l'expert ;
-- les grandes corrections sont limitées pour éviter des mises à jour instables.
-
-Cette étape donne le modèle **BC** (*Behavior Cloning*). Elle sert aussi de référence de sécurité : si l'étape suivante fait moins bien, on peut conserver cette version.
-
----
-
-## Étape 3 : affinement avec PPO
-
-PPO signifie *Proximal Policy Optimization*. Le modèle essaie des décisions dans le simulateur et reçoit une récompense :
-
-- détecter la cible est fortement récompensé ;
-- réduire l'incertitude est utile ;
-- perdre du temps coûte un peu ;
-- un Bingo carburant est fortement pénalisé ;
-- une sortie de zone est également pénalisée.
-
-Le mot "proximal" est important : PPO limite l'ampleur des changements entre deux mises à jour. Le modèle ne doit pas oublier brutalement ce qu'il savait déjà.
-
-L'affinement suit quatre niveaux de difficulté. Pour chaque niveau, le modèle est entraîné avec **50 000 étapes par niveau**, sur quatre environnements parallèles. Il apprend donc progressivement au lieu de commencer directement par les situations les plus difficiles.
-
-PPO produit un candidat. Il ne devient pas automatiquement le modèle utilisé par l'application.
-
----
-
-## Étape 4 : choisir entre BC et PPO
-
-La sélection ne se fait pas sur la récompense moyenne seule. Une politique qui gagne du temps mais met un appareil en danger est rejetée.
-
-L'ordre de décision est le suivant :
-
-1. moins de violations Bingo ;
-2. moins de sorties de zone ;
-3. meilleur taux de réussite avec une marge statistique prudente ;
-4. meilleur temps moyen d'interception.
-
-La marge statistique utilisée est la borne inférieure de Wilson à 95 %. Elle répond à une question simple : "Même en tenant compte de l'incertitude du nombre d'essais, quel taux de réussite minimal peut-on raisonnablement garantir ?"
-
-Le candidat est comparé à l'expert et à la copie BC sur **500 seeds fixes**, de `200000` à `200499`. Les mêmes seeds permettent de comparer les candidats sur les mêmes situations.
-
-Le garde-fou d'acceptation exige notamment :
-
-- zéro Bingo ;
-- zéro sortie de zone ;
-- une borne de réussite qui ne soit pas inférieure de plus de deux points à celle de l'expert.
-
-Sur les trois entraînements indépendants réalisés avec les seeds 2026, 2027 et 2028 :
-
-| entraînement | version retenue | interceptions | Bingo | sorties de zone | temps moyen |
-|---|---:|---:|---:|---:|---:|
-| seed 2026 | BC | 500/500 | 0 | 0 | 9,610 min |
-| seed 2027 | BC | 500/500 | 0 | 0 | 9,608 min |
-| seed 2028 | BC | 500/500 | 0 | 0 | 9,596 min |
-
-Le résultat est clair : PPO n'a pas apporté un gain suffisant pour remplacer BC. La stratégie active retenue pour l'application est donc la version **Behavior Cloning issue de l'entraînement seed 2027**.
-
-Cela explique pourquoi l'interface ne propose pas de choisir entre PPO et BC : ce choix a été fait pendant la qualification, pas pendant une mission opérationnelle.
-
----
-
-## Étape 5 : rendre le modèle utilisable dans le navigateur
-
-L'entraînement est fait avec Python et Gymnasium, qui restent la référence. Pour l'application web, le modèle retenu est exporté au format ONNX.
-
-L'export n'est pas accepté sur simple présence du fichier. Une vérification compare les sorties Python et ONNX sur les mêmes observations. Le seuil de différence est `0,0001`.
-
-Les écarts mesurés pour les trois entraînements sont de l'ordre de `3 × 10⁻⁷`, donc largement sous le seuil. Le navigateur utilise ainsi le même comportement que le modèle qualifié en Python.
-
-La session ONNX est chargée une seule fois par campagne et réutilisée. Elle n'est pas recréée à chaque tirage Monte-Carlo.
-
----
-
-## Ce qui protège encore la mission après le modèle
-
-Même un modèle correctement entraîné peut rencontrer une situation inhabituelle. Le réseau ne possède donc pas le dernier mot.
-
-Le moteur conserve des protections déterministes :
-
-- le waypoint est borné à la zone de recherche ;
-- le pilote automatique contrôle le déplacement ;
-- la distance de retour est calculée à chaque étape ;
+- le waypoint reste dans la zone autorisée ;
+- le pilote automatique effectue le déplacement ;
+- la distance de retour est recalculée ;
 - la réserve carburant est conservée ;
-- le retour sûr vers la frégate est déclenché avant le Bingo ;
-- les résultats `SAFE_RTB`, `BINGO_VIOLATION`, `OUT_OF_BOUNDS` et `TIME_LIMIT` restent distincts.
+- le retour sûr est déclenché avant le Bingo.
 
-Le réseau propose une direction de recherche. Il ne peut pas désactiver ces règles.
+Les résultats `SAFE_RTB`, `BINGO_VIOLATION`, `OUT_OF_BOUNDS` et `TIME_LIMIT` restent séparés. Un retour sûr n'est pas compté comme un échec de sécurité.
 
----
+## Export vers le navigateur
 
-## Ce que ces résultats veulent dire, et ce qu'ils ne veulent pas dire
+Python/Gymnasium reste la référence. Le modèle retenu est exporté en ONNX pour le navigateur, puis comparé à sa version Python sur les mêmes observations.
 
-Les 1 500 épisodes qualifiés montrent que le modèle est stable sur le protocole de qualification utilisé. Ils ne prouvent pas qu'il réussira toutes les missions réelles.
+Le seuil d'écart accepté est `0,0001`. Les écarts mesurés sont de l'ordre de `3 × 10⁻⁷`. La session ONNX est chargée une seule fois par campagne et réutilisée pour les tirages suivants.
 
-Il reste nécessaire de tester séparément :
+## Limites des résultats
 
-- tempête et fort clapot ;
-- très forte incertitude sur le datum ;
-- cible rapide ou très manœuvrante ;
-- zones de recherche inhabituelles ;
-- changements de cap de la frégate ;
-- limites du capteur radar.
+Les 1 500 épisodes qualifiés montrent une bonne stabilité sur le protocole utilisé. Ils ne constituent pas une garantie pour toutes les missions.
 
-Le simulateur mesure le comportement. Il ne remplace ni la doctrine opérationnelle, ni la décision de l'équipage, ni une certification réglementaire.
+Il faut encore évaluer séparément les cas difficiles : tempête, très forte incertitude du datum, cible rapide ou manœuvrante, zone inhabituelle et changements de cap de la frégate.
 
----
+Le simulateur aide à comparer les stratégies. Il ne remplace ni la doctrine opérationnelle, ni l'équipage, ni une certification réglementaire.
 
-## Où retrouver les éléments techniques
+## Références dans le dépôt
 
-- Environnement canonique : [`python/baysian_patrol_env.py`](../python/baysian_patrol_env.py)
-- Pipeline expert → imitation → PPO : [`python/hybrid_train.py`](../python/hybrid_train.py)
-- Qualification multi-seed : [`python/hybrid_v231_qualification.json`](../python/hybrid_v231_qualification.json)
+- Environnement : [`python/baysian_patrol_env.py`](../python/baysian_patrol_env.py)
+- Entraînement : [`python/hybrid_train.py`](../python/hybrid_train.py)
+- Qualification : [`python/hybrid_v231_qualification.json`](../python/hybrid_v231_qualification.json)
 - Export web : [`python/export_onnx.py`](../python/export_onnx.py)
-- Tests de contrat Python : [`python/tests`](../python/tests)
 
-Commandes de vérification :
+Vérification locale :
 
 ```bash
 python -m unittest discover -s python/tests -v
