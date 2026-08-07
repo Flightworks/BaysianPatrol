@@ -2,9 +2,10 @@ import * as ort from 'onnxruntime-web';
 import type { HelicopterState, ScenarioConfig } from '../types/simulation';
 import type { BayesianGrid } from './bayesianGrid';
 import {
+  advanceTowardWaypoint,
   applyRelativeWaypoint,
   buildHybridVector,
-  computeFuelMargin,
+  estimateWaypointTravelMinutes,
   normalizedEntropy,
   scaleBeliefForObservation,
 } from './missionContract';
@@ -56,23 +57,29 @@ export class RLPlanner {
     const dx = frigateX-helico.x;
     const dy = frigateY-helico.y;
     const distance = Math.hypot(dx, dy);
-    const metrics = computeFuelMargin(helico.fuelRemaining, distance, helicoMaxSpeed, bingoFuelBuffer || 15);
-    if (metrics.marginMinutes > dt && helico.status !== 'BINGO_RETURN') return null;
-    const maxTravel = helicoMaxSpeed/60*dt;
-    if (distance <= Math.max(1, maxTravel)) {
-      return {
-        x: frigateX, y: frigateY, heading: helico.heading, speed: 0,
-        fuelRemaining: Math.max(0, helico.fuelRemaining-dt), status: 'SAFE_RTB',
-      };
-    }
-    const heading = (Math.atan2(dx, dy)*180/Math.PI+360)%360;
-    const radians = heading*Math.PI/180;
+    const returnTimeMinutes = estimateWaypointTravelMinutes(
+      helico,
+      { x: frigateX, y: frigateY },
+      helicoMaxSpeed,
+      this.config.windSpeed,
+      this.config.windDirection,
+    );
+    if (helico.fuelRemaining - returnTimeMinutes - (bingoFuelBuffer || 15) > dt && helico.status !== 'BINGO_RETURN') return null;
+    const next = advanceTowardWaypoint(
+      helico,
+      { x: frigateX, y: frigateY },
+      helicoMaxSpeed,
+      dt,
+      this.config.windSpeed,
+      this.config.windDirection,
+    );
+    const arrived = distance <= 1 || Math.hypot(next.x - frigateX, next.y - frigateY) <= 1e-9;
     return {
-      x: helico.x+maxTravel*Math.sin(radians),
-      y: helico.y+maxTravel*Math.cos(radians),
-      heading, speed: helicoMaxSpeed,
-      fuelRemaining: Math.max(0, helico.fuelRemaining-dt),
-      status: 'BINGO_RETURN',
+      ...next,
+      x: arrived ? frigateX : next.x,
+      y: arrived ? frigateY : next.y,
+      speed: arrived ? 0 : next.speed,
+      status: arrived ? 'SAFE_RTB' : 'BINGO_RETURN',
     };
   }
 
@@ -154,6 +161,8 @@ export class RLPlanner {
       dt,
       this.config.searchAreaCenterX,
       this.config.searchAreaCenterY,
+      this.config.windSpeed,
+      this.config.windDirection,
     );
   }
 

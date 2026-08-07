@@ -1,18 +1,21 @@
-import type { ScenarioConfig, TargetState, PathPoint } from '../types/simulation';
-import { degToRad, normalizeAngle, SeededRandom } from './random';
+import type { ScenarioConfig, TargetState, PathPoint } from '../types/simulation.ts';
+import { degToRad, normalizeAngle, SeededRandom } from './random.ts';
+import { advanceTargetTruth, deriveInitialTargetTruth } from './targetUncertainty.ts';
 
 export interface RunRealizationParams {
   windSpeed: number;
   windDirection: number;
   datumX: number;
   datumY: number;
+  targetInitialX: number;
+  targetInitialY: number;
   frigateX: number;
   frigateY: number;
   frigateSectorDeg: number;
   helicoSpeed: number;
   initialSpeed: number;
   initialHeading: number;
-  departureTimeMinutes: number;
+  datumTimeOffsetMinutes: number;
   seed: number;
 }
 
@@ -40,9 +43,11 @@ export class TargetSim {
       const windSpeed = Math.max(0, gaussian(config.windSpeed, config.sigmaWindSpeed || 3.0));
       const windDirection = normalizeAngle(gaussian(config.windDirection, config.sigmaWindDirection || 15.0));
       
-      // 2. Draw Datum initial position noise
-      const datumX = gaussian(config.datumX, config.sigmaDatumX);
-      const datumY = gaussian(config.datumY, config.sigmaDatumY);
+      // 2. Keep the observed datum fixed and draw hidden ground truth around it.
+      const datumX = config.datumX;
+      const datumY = config.datumY;
+      const spatialOffsetX = gaussian(0, config.sigmaDatumX);
+      const spatialOffsetY = gaussian(0, config.sigmaDatumY);
 
       // 3. Draw 360-degree Omnidirectional Frigate Departure Sector
       const frigateSectorDeg = source.uniform() * 360.0;
@@ -57,10 +62,20 @@ export class TargetSim {
       const frigateY = config.searchAreaCenterY + rDist * Math.cos(sectorRad);
 
       const helicoSpeed = Math.max(80.0, gaussian(config.helicoMaxSpeed, config.sigmaHelicoSpeed || 5.0));
-
       const initialHeading = normalizeAngle(gaussian(config.meanHeading, config.sigmaHeading));
       const initialSpeed = Math.max(5.0, gaussian(config.meanSpeed, config.sigmaSpeed));
-      const departureTimeMinutes = gaussian(0, config.sigmaT);
+      const datumTimeOffsetMinutes = gaussian(0, config.sigmaT);
+      const initialTruth = deriveInitialTargetTruth({
+        datumX,
+        datumY,
+        spatialOffsetX,
+        spatialOffsetY,
+        timeOffsetMinutes: datumTimeOffsetMinutes,
+        speed: initialSpeed,
+        heading: initialHeading,
+        currentSpeed: windSpeed * 0.025,
+        currentHeading: normalizeAngle(windDirection + 180 + 15),
+      });
       const seed = Math.floor(source.uniform()*0xffffffff);
 
       this.realization = {
@@ -68,22 +83,24 @@ export class TargetSim {
         windDirection,
         datumX,
         datumY,
+        targetInitialX: initialTruth.x,
+        targetInitialY: initialTruth.y,
         frigateX,
         frigateY,
         frigateSectorDeg,
         helicoSpeed,
         initialSpeed,
         initialHeading,
-        departureTimeMinutes,
+        datumTimeOffsetMinutes,
         seed,
       };
       this.rng = new SeededRandom(seed);
     }
 
-    // Initial position at t=0
+    // Hidden ground truth at t=0, distinct from the observed datum.
     this.state = {
-      x: this.realization.datumX,
-      y: this.realization.datumY,
+      x: this.realization.targetInitialX,
+      y: this.realization.targetInitialY,
       speed: this.realization.initialSpeed,
       heading: this.realization.initialHeading,
     };
@@ -97,35 +114,16 @@ export class TargetSim {
 
   public step(tMinutes: number, dtMinutes: number): TargetState {
     const { sigmaRouteDrift, sigmaSpeedDrift } = this.config;
-    const { windSpeed, windDirection, departureTimeMinutes } = this.realization;
+    const { windSpeed, windDirection } = this.realization;
+    const dtHours = dtMinutes / 60.0;
 
-    if (tMinutes >= departureTimeMinutes) {
-      const dtHours = dtMinutes / 60.0;
-
-      const headingNoise = this.rng.gaussian(0, sigmaRouteDrift * Math.sqrt(dtHours));
-      const speedNoise = this.rng.gaussian(0, sigmaSpeedDrift * Math.sqrt(dtHours));
-
-      this.state.heading = normalizeAngle(this.state.heading + headingNoise);
-      this.state.speed = Math.max(5.0, Math.min(45.0, this.state.speed + speedNoise));
-
-      const currentSpeed = windSpeed * 0.025;
-      const currentDir = normalizeAngle(windDirection + 180 + 15);
-
-      const targetRad = degToRad(this.state.heading);
-      const currentRad = degToRad(currentDir);
-
-      const targetVx = this.state.speed * Math.sin(targetRad);
-      const targetVy = this.state.speed * Math.cos(targetRad);
-
-      const currentVx = currentSpeed * Math.sin(currentRad);
-      const currentVy = currentSpeed * Math.cos(currentRad);
-
-      const totalVx = targetVx + currentVx;
-      const totalVy = targetVy + currentVy;
-
-      this.state.x += totalVx * dtHours;
-      this.state.y += totalVy * dtHours;
-    }
+    this.state = advanceTargetTruth(this.state, {
+      dtMinutes,
+      headingNoise: this.rng.gaussian(0, sigmaRouteDrift * Math.sqrt(dtHours)),
+      speedNoise: this.rng.gaussian(0, sigmaSpeedDrift * Math.sqrt(dtHours)),
+      currentSpeed: windSpeed * 0.025,
+      currentHeading: normalizeAngle(windDirection + 180 + 15),
+    });
 
     this.path.push({ t: tMinutes, x: this.state.x, y: this.state.y });
     return { ...this.state };
@@ -134,4 +132,17 @@ export class TargetSim {
   public getPath(): PathPoint[] {
     return [...this.path];
   }
+}
+
+export function buildCanonicalTargetPath(
+  config: ScenarioConfig,
+  realization: RunRealizationParams,
+  endTimeMinutes: number = config.helicoEndurance,
+): PathPoint[] {
+  const target = new TargetSim(config, realization);
+  const steps = Math.ceil(endTimeMinutes / config.dt);
+  for (let step = 1; step <= steps; step++) {
+    target.step(step * config.dt, config.dt);
+  }
+  return target.getPath();
 }
