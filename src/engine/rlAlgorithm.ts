@@ -8,6 +8,9 @@ import {
   normalizedEntropy,
   scaleBeliefForObservation,
 } from './missionContract';
+import { SharedAsyncResource } from './sharedAsyncResource';
+
+const policySessionResource = new SharedAsyncResource<ort.InferenceSession | null>();
 
 /** Browser counterpart of the canonical Python v2.3.1 waypoint contract. */
 export class RLPlanner {
@@ -25,12 +28,16 @@ export class RLPlanner {
   }
 
   private async initOnnxSession(): Promise<void> {
-    try {
-      this.session = await ort.InferenceSession.create(`/models/baysian_patrol_policy.onnx?t=${Date.now()}`);
-      console.log('Session ONNX Runtime Web chargée avec succès pour le modèle RL hybride.');
-    } catch (error) {
-      console.warn('Modèle ONNX indisponible : expert bayésien de secours utilisé.', error);
-    }
+    this.session = await policySessionResource.get(async () => {
+      try {
+        const session = await ort.InferenceSession.create('/models/baysian_patrol_policy.onnx');
+        console.log('Session ONNX Runtime Web partagée chargée pour la stratégie hybride.');
+        return session;
+      } catch (error) {
+        console.warn('Modèle ONNX indisponible : expert bayésien de secours utilisé.', error);
+        return null;
+      }
+    });
   }
 
   private safeReturn(helico: HelicopterState, dt: number): HelicopterState | null {

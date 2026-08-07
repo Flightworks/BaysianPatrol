@@ -1,4 +1,4 @@
-# AGENTS.md — BaysianPatrol v2.3.1 RL / Monte-Carlo
+# AGENTS.md — BaysianPatrol v2.4.0 hybride / Monte-Carlo
 
 Ce fichier est le contrat de travail pour tout agent intervenant sur le dépôt. **Python/Gymnasium est la référence canonique du contrat RL** ; TypeScript/ONNX doit reproduire exactement ses observations, actions, règles de sécurité et critères terminaux.
 
@@ -123,6 +123,15 @@ Les comparaisons doivent utiliser des réalisations appariées et reproductibles
 
 La grille Monte-Carlo conserve trois cartes (`classical`, `bayesianStandard`, `bayesianEvolved`) et applique une mise à jour négative après balayage. Les règles physiques partagées avec Python doivent rester cohérentes : vitesse, endurance, réserve, portée, déplacement cible, limites et critères terminaux.
 
+La stratégie de référence `NAIVE` est un **Parallel Sweep IAMSAR** déterministe :
+
+- point de départ dans le coin le plus proche, à un demi-espacement de piste des deux bords ;
+- branches parallèles au grand côté de la zone ;
+- espacement constant dérivé de la largeur de balayage radar ;
+- retour frégate prioritaire dès le seuil carburant.
+
+L'interface métier ne doit exposer ni entraînement, ni hyperparamètres PPO, ni sélection de fichier ONNX. Le modèle qualifié seed 2027 est la stratégie hybride active. Le workflow est limité à `Comparaison`, `Carte tactique` et `Historique`; les vingt derniers résumés de campagne sont conservés localement sans leurs trajectoires.
+
 ## 6. Fichiers importants
 
 ```text
@@ -137,7 +146,11 @@ src/engine/bayesianGrid.ts          posterior Monte-Carlo
 src/engine/random.ts                PRNG seedé
 src/engine/targetGenerator.ts       réalisation et trajectoire cible
 src/engine/simulator.ts             Monte-Carlo apparié et outcomes
+src/engine/iamsarPattern.ts         plan de balayage parallèle IAMSAR
+src/engine/runHistory.ts            historique compact local
 tests-ts/missionContract.test.ts    tests du contrat TypeScript
+tests-ts/naiveIamsar.test.ts        géométrie du râteau IAMSAR
+tests-ts/runHistory.test.ts         persistance des campagnes
 ```
 
 ## 7. Commandes de vérification
@@ -149,7 +162,7 @@ Depuis le dépôt :
 python -m unittest discover -s python/tests -v
 
 # Contrat TypeScript pur (Node >=22)
-node --experimental-strip-types --test tests-ts/missionContract.test.ts
+node --experimental-strip-types --test tests-ts/*.test.ts
 
 # Frontend
 npm install
