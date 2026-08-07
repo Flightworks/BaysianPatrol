@@ -2,6 +2,22 @@ import React, { useRef, useEffect, useState } from 'react';
 import type { ScenarioConfig, MonteCarloRunResult, GridMode } from '../types/simulation';
 import { getRadarFootprintContour } from '../engine/radarModel';
 import { Eye, EyeOff, Layers, ZoomIn, ZoomOut, RotateCcw, Activity } from 'lucide-react';
+import { interpolatePathAtTime } from '../engine/playback';
+
+const LAYER_INFO: Record<GridMode, { label: string; description: string }> = {
+  CLASSICAL: {
+    label: 'Prévision de route',
+    description: 'Position probable issue du datum, de la route et de la dérive, sans effet des balayages radar.',
+  },
+  BAYESIAN_STANDARD: {
+    label: 'Posterior radar',
+    description: 'Prévision corrigée par les non-détections : une zone balayée perd de la probabilité.',
+  },
+  BAYESIAN_EVOLVED: {
+    label: 'Posterior tactique',
+    description: "Posterior radar tenant compte de l'efficacité du capteur selon l'angle d'approche.",
+  },
+};
 
 interface TacticalCanvasProps {
   config: ScenarioConfig;
@@ -80,7 +96,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
     const nmToPxY = (nmY: number) => centerY - nmY * baseScale;
 
     // Primary run used for grid heatmaps
-    const activeSnapshotRun = selectedSigmaRun || selectedNaiveRun || selectedRlRun;
+    const activeSnapshotRun = selectedRlRun || selectedSigmaRun || selectedNaiveRun;
     const activeEnv = activeSnapshotRun?.runEnv || config;
 
     // 1. Draw Coordinate Grid Lines (Every 5 NM)
@@ -195,7 +211,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
     }
 
     // 4. Draw Monte Carlo Ghost Overlay (All N runs faint target paths)
-    if (showAllRunsOverlay && allRuns && allRuns.length > 0) {
+    if (showTargetGroundTruth && showAllRunsOverlay && allRuns && allRuns.length > 0) {
       ctx.lineWidth = 0.5;
       for (const run of allRuns) {
         if (run.targetPath.length > 0) {
@@ -362,7 +378,9 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
     // C. Target Ground Truth Path (if unmasked)
     if (showTargetGroundTruth && activeSnapshotRun) {
-      const tPoints = activeSnapshotRun.targetPath.filter(p => p.t <= currentPlaybackTime);
+      const tPoints = activeSnapshotRun.targetPath.filter(p => p.t < currentPlaybackTime);
+      const interpolatedTarget = interpolatePathAtTime(activeSnapshotRun.targetPath, currentPlaybackTime);
+      if (interpolatedTarget) tPoints.push(interpolatedTarget);
       if (tPoints.length > 0) {
         ctx.lineWidth = 2.0;
         ctx.setLineDash([4, 4]);
@@ -514,9 +532,9 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
               ? 'bg-amber-600 text-slate-950 font-bold shadow-md'
               : 'bg-slate-800 text-slate-400 hover:text-slate-200'
           }`}
-          title="Incertitude initiale au datum"
+          title={LAYER_INFO.CLASSICAL.description}
         >
-          Datum initial
+          {LAYER_INFO.CLASSICAL.label}
         </button>
 
         <button
@@ -526,9 +544,9 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
               ? 'bg-cyan-600 text-white font-bold shadow-md'
               : 'bg-slate-800 text-slate-400 hover:text-slate-200'
           }`}
-          title="Propagation de l'incertitude dans le temps"
+          title={LAYER_INFO.BAYESIAN_STANDARD.description}
         >
-          Propagation
+          {LAYER_INFO.BAYESIAN_STANDARD.label}
         </button>
 
         <button
@@ -538,10 +556,12 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
               ? 'bg-cyan-700 text-white font-bold'
               : 'bg-slate-800 text-slate-400 hover:text-slate-200'
           }`}
-          title="Estimation tactique utilisée pendant la recherche"
+          title={LAYER_INFO.BAYESIAN_EVOLVED.description}
         >
-          <span>Estimation active</span>
+          <span>{LAYER_INFO.BAYESIAN_EVOLVED.label}</span>
         </button>
+
+        <span className="tactical-layer-description">{LAYER_INFO[gridMode].description}</span>
 
         <div className="h-4 w-px bg-slate-800 mx-1" />
 
@@ -559,6 +579,8 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
         <button
           onClick={onToggleAllRunsOverlay}
+          disabled={!showTargetGroundTruth}
+          title={showTargetGroundTruth ? 'Afficher la dispersion des trajectoires cibles Monte-Carlo' : 'Afficher d’abord la vérité terrain'}
           className={`flex items-center space-x-1 px-2 py-1 rounded transition-colors cursor-pointer ${
             showAllRunsOverlay
               ? 'bg-cyan-950/80 border border-cyan-500 text-cyan-300'
@@ -566,7 +588,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
-          <span>Ensemble des trajectoires</span>
+          <span>Dispersion des cibles</span>
         </button>
       </div>
 

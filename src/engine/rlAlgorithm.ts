@@ -9,6 +9,7 @@ import {
   scaleBeliefForObservation,
 } from './missionContract';
 import { SharedAsyncResource } from './sharedAsyncResource';
+import { BranchCommitment, effectiveRadarRange, type Point } from './coverageBranch';
 
 const policySessionResource = new SharedAsyncResource<ort.InferenceSession | null>();
 
@@ -17,9 +18,19 @@ export class RLPlanner {
   private config: ScenarioConfig;
   private session: ort.InferenceSession | null = null;
   private initPromise: Promise<void>;
+  private branchCommitment: BranchCommitment;
 
   constructor(config: ScenarioConfig) {
     this.config = config;
+    this.branchCommitment = new BranchCommitment(
+      {
+        minX: config.searchAreaCenterX - config.searchAreaWidth / 2,
+        maxX: config.searchAreaCenterX + config.searchAreaWidth / 2,
+        minY: config.searchAreaCenterY - config.searchAreaHeight / 2,
+        maxY: config.searchAreaCenterY + config.searchAreaHeight / 2,
+      },
+      1.5 * effectiveRadarRange(config),
+    );
     this.initPromise = this.initOnnxSession();
   }
 
@@ -110,6 +121,42 @@ export class RLPlanner {
     return { gridData, vectorData, expertAction };
   }
 
+  private executeCommittedBranch(
+    helico: HelicopterState,
+    action: readonly number[],
+    dt: number,
+  ): ReturnType<typeof applyRelativeWaypoint> {
+    const halfWidth = this.config.searchAreaWidth / 2;
+    const halfHeight = this.config.searchAreaHeight / 2;
+    const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
+    const proposal: Point = {
+      x: clamp(
+        helico.x + clamp(action[0] ?? 0, -1, 1) * halfWidth,
+        this.config.searchAreaCenterX - halfWidth,
+        this.config.searchAreaCenterX + halfWidth,
+      ),
+      y: clamp(
+        helico.y + clamp(action[1] ?? 0, -1, 1) * halfHeight,
+        this.config.searchAreaCenterY - halfHeight,
+        this.config.searchAreaCenterY + halfHeight,
+      ),
+    };
+    const committed = this.branchCommitment.resolve(helico, proposal);
+    return applyRelativeWaypoint(
+      helico,
+      [
+        (committed.x - helico.x) / halfWidth,
+        (committed.y - helico.y) / halfHeight,
+      ],
+      halfWidth,
+      halfHeight,
+      this.config.helicoMaxSpeed,
+      dt,
+      this.config.searchAreaCenterX,
+      this.config.searchAreaCenterY,
+    );
+  }
+
   public async planStepAsync(helico: HelicopterState, grid: BayesianGrid, t: number, dt: number): Promise<HelicopterState> {
     const returnState = this.safeReturn(helico, dt);
     if (returnState) return returnState;
@@ -127,10 +174,7 @@ export class RLPlanner {
         console.warn('Inférence ONNX échouée : expert de secours utilisé.', error);
       }
     }
-    const next = applyRelativeWaypoint(
-      helico, action, this.config.searchAreaWidth/2, this.config.searchAreaHeight/2,
-      this.config.helicoMaxSpeed, dt, this.config.searchAreaCenterX, this.config.searchAreaCenterY,
-    );
+    const next = this.executeCommittedBranch(helico, action, dt);
     return { ...next, status: next.fuelRemaining <= 0 ? 'OUT_OF_FUEL' : 'SEARCHING' };
   }
 
@@ -138,10 +182,7 @@ export class RLPlanner {
     const returnState = this.safeReturn(helico, dt);
     if (returnState) return returnState;
     const action = this.observation(helico, grid, t).expertAction;
-    const next = applyRelativeWaypoint(
-      helico, action, this.config.searchAreaWidth/2, this.config.searchAreaHeight/2,
-      this.config.helicoMaxSpeed, dt, this.config.searchAreaCenterX, this.config.searchAreaCenterY,
-    );
+    const next = this.executeCommittedBranch(helico, action, dt);
     return { ...next, status: next.fuelRemaining <= 0 ? 'OUT_OF_FUEL' : 'SEARCHING' };
   }
 }

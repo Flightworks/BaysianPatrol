@@ -106,6 +106,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .tactical-workspace .section-heading h1, .history-heading h1 { margin: 0; font-size: 42px; font-weight: 300; }
 .tactical-canvas-shell { position: relative; width: 100%; min-height: 590px; overflow: hidden; background: #000; border: 1px solid #262626; }
 .tactical-toolbar, .tactical-legend, .tactical-zoom { background: rgba(5,5,5,.94) !important; border: 1px solid #393939 !important; border-radius: 0 !important; box-shadow: none !important; backdrop-filter: none !important; }
+.tactical-layer-description { max-width: 360px; padding: 0 6px; color: #a3a3a3; font-size: 10px; line-height: 1.3; }
+.tactical-toolbar button:disabled { opacity: .35; cursor: not-allowed; }
 
 .history-heading { align-items: end; }
 .history-heading > div { max-width: 900px; }

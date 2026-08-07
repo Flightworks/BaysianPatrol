@@ -1,0 +1,31 @@
+{
+  "version": "2.4.1",
+  "qualifiedAt": "2026-08-07T12:14:34.612Z",
+  "scenario": "Scénario Standard avec Variabilité Globale",
+  "monteCarloSeed": 2026,
+  "pairedSituations": 250,
+  "executionTimeMs": 50144.5,
+  "strategies": {
+    "hybrid": {
+      "successRate": 100,
+      "meanInterceptionTime": 11.088,
+      "meanFuelConsumed": 11.088,
+      "safeReturnRate": 0,
+      "bingoRate": 0
+    },
+    "bayesian": {
+      "successRate": 97.6,
+      "meanInterceptionTime": 19.565573770491802,
+      "meanFuelConsumed": 20.916,
+      "safeReturnRate": 0.8,
+      "bingoRate": 0
+    },
+    "parallelSweep": {
+      "successRate": 98.4,
+      "meanInterceptionTime": 12.264227642276422,
+      "meanFuelConsumed": 14.004,
+      "safeReturnRate": 1.2,
+      "bingoRate": 0
+    }
+  }
+}
