@@ -1,6 +1,6 @@
 import type { ScenarioConfig, HelicopterState } from '../types/simulation';
-import { degToRad, radToDeg, normalizeAngle } from './random';
 import { buildParallelSweepPlan, type SweepPoint } from './iamsarPattern';
+import { advanceTowardWaypoint, estimateWaypointTravelMinutes } from './missionContract';
 
 /**
  * Baseline IAMSAR: parallel sweep (PS) at constant track spacing.
@@ -32,35 +32,35 @@ export class NaivePlanner {
     _tMinutes: number,
     dtMinutes: number,
   ): HelicopterState {
-    const { frigateX, frigateY, helicoMaxSpeed, bingoFuelBuffer } = this.config;
-    const distStep = helicoMaxSpeed * (dtMinutes / 60);
-    const distToFrigate = Math.hypot(frigateX - currentHelico.x, frigateY - currentHelico.y);
-    const returnTimeMinutes = (distToFrigate / helicoMaxSpeed) * 60;
+    const { frigateX, frigateY, helicoMaxSpeed, bingoFuelBuffer, windSpeed, windDirection } = this.config;
+    const returnTimeMinutes = estimateWaypointTravelMinutes(
+      currentHelico,
+      { x: frigateX, y: frigateY },
+      helicoMaxSpeed,
+      windSpeed,
+      windDirection,
+    );
 
     if (currentHelico.fuelRemaining <= 0) {
       return { ...currentHelico, fuelRemaining: 0, status: 'OUT_OF_FUEL' };
     }
 
     if (currentHelico.fuelRemaining <= returnTimeMinutes + bingoFuelBuffer) {
-      if (distToFrigate <= distStep) {
-        return {
-          x: frigateX,
-          y: frigateY,
-          heading: currentHelico.heading,
-          speed: 0,
-          fuelRemaining: Math.max(0, currentHelico.fuelRemaining - dtMinutes),
-          status: 'SAFE_RTB',
-        };
-      }
-      const heading = normalizeAngle(radToDeg(Math.atan2(frigateX - currentHelico.x, frigateY - currentHelico.y)));
-      const headingRad = degToRad(heading);
+      const next = advanceTowardWaypoint(
+        currentHelico,
+        { x: frigateX, y: frigateY },
+        helicoMaxSpeed,
+        dtMinutes,
+        windSpeed,
+        windDirection,
+      );
+      const arrived = Math.hypot(next.x - frigateX, next.y - frigateY) <= 1e-9;
       return {
-        x: currentHelico.x + distStep * Math.sin(headingRad),
-        y: currentHelico.y + distStep * Math.cos(headingRad),
-        heading,
-        speed: helicoMaxSpeed,
-        fuelRemaining: Math.max(0, currentHelico.fuelRemaining - dtMinutes),
-        status: 'BINGO_RETURN',
+        ...next,
+        x: arrived ? frigateX : next.x,
+        y: arrived ? frigateY : next.y,
+        speed: arrived ? 0 : next.speed,
+        status: arrived ? 'SAFE_RTB' : 'BINGO_RETURN',
       };
     }
 
@@ -68,32 +68,18 @@ export class NaivePlanner {
       x: this.config.searchAreaCenterX,
       y: this.config.searchAreaCenterY,
     };
-    const distance = Math.hypot(waypoint.x - currentHelico.x, waypoint.y - currentHelico.y);
-
-    if (distance <= distStep) {
-      const heading = distance > 1e-9
-        ? normalizeAngle(radToDeg(Math.atan2(waypoint.x - currentHelico.x, waypoint.y - currentHelico.y)))
-        : currentHelico.heading;
+    const next = advanceTowardWaypoint(
+      currentHelico,
+      waypoint,
+      helicoMaxSpeed,
+      dtMinutes,
+      windSpeed,
+      windDirection,
+    );
+    if (Math.hypot(next.x - waypoint.x, next.y - waypoint.y) <= 1e-9) {
       this.advanceWaypoint();
-      return {
-        x: waypoint.x,
-        y: waypoint.y,
-        heading,
-        speed: helicoMaxSpeed,
-        fuelRemaining: Math.max(0, currentHelico.fuelRemaining - dtMinutes),
-        status: 'SEARCHING',
-      };
+      return { ...next, x: waypoint.x, y: waypoint.y, status: 'SEARCHING' };
     }
-
-    const heading = normalizeAngle(radToDeg(Math.atan2(waypoint.x - currentHelico.x, waypoint.y - currentHelico.y)));
-    const headingRad = degToRad(heading);
-    return {
-      x: currentHelico.x + distStep * Math.sin(headingRad),
-      y: currentHelico.y + distStep * Math.cos(headingRad),
-      heading,
-      speed: helicoMaxSpeed,
-      fuelRemaining: Math.max(0, currentHelico.fuelRemaining - dtMinutes),
-      status: 'SEARCHING',
-    };
+    return { ...next, status: 'SEARCHING' };
   }
 }

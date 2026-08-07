@@ -19,6 +19,23 @@ const LAYER_INFO: Record<GridMode, { label: string; description: string }> = {
   },
 };
 
+const STATUS_LABEL = {
+  SEARCHING: 'EN RECHERCHE',
+  INTERCEPTED: 'INTERCEPTÉE',
+  BINGO_RETURN: 'RETOUR BINGO',
+  SAFE_RTB: 'RETOUR SÛR',
+  OUT_OF_FUEL: 'CARBURANT ÉPUISÉ',
+} as const;
+
+const runOutcomeLabel = (run: MonteCarloRunResult): string => {
+  if (run.intercepted) return `${run.interceptionTime.toFixed(0)} min`;
+  if (run.safeReturn) return 'retour sûr';
+  if (run.bingoTriggered) return 'violation Bingo';
+  if (run.outOfBounds) return 'hors zone';
+  if (run.outcome === 'OUT_OF_FUEL') return 'carburant épuisé';
+  return 'limite de temps';
+};
+
 interface TacticalCanvasProps {
   config: ScenarioConfig;
   selectedSigmaRun?: MonteCarloRunResult | null;
@@ -264,7 +281,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
         ctx.fillStyle = '#fef3c7';
         ctx.font = 'bold 10px sans-serif';
-        ctx.fillText(`RÂTEAU IAMSAR (${currentNaive.status})`, naivePxX + 10, naivePxY + 20);
+        ctx.fillText(`RÂTEAU IAMSAR (${STATUS_LABEL[currentNaive.status]})`, naivePxX + 10, naivePxY + 20);
       }
     }
 
@@ -318,7 +335,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
         ctx.fillStyle = '#d1fae5';
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText(`RECHERCHE BAYÉSIENNE (${currentSigma.status})`, sigmaPxX + 10, sigmaPxY - 14);
+        ctx.fillText(`RECHERCHE BAYÉSIENNE (${STATUS_LABEL[currentSigma.status]})`, sigmaPxX + 10, sigmaPxY - 14);
       }
     }
 
@@ -372,7 +389,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
 
         ctx.fillStyle = '#f3e8ff';
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText(`STRATÉGIE HYBRIDE (${currentRl.status})`, rlPxX + 10, rlPxY + 4);
+        ctx.fillText(`STRATÉGIE HYBRIDE (${STATUS_LABEL[currentRl.status]})`, rlPxX + 10, rlPxY + 4);
       }
     }
 
@@ -597,7 +614,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
         <div className="flex items-center space-x-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
           <span className="text-purple-300 font-bold">Hybride 2027</span>
-          {selectedRlRun && <span className="text-[10px] text-slate-400">({selectedRlRun.intercepted ? `${selectedRlRun.interceptionTime.toFixed(0)} min` : selectedRlRun.outcome})</span>}
+          {selectedRlRun && <span className="text-[10px] text-slate-400">({runOutcomeLabel(selectedRlRun)})</span>}
         </div>
         <div className="h-3.5 w-px bg-slate-700" />
         <div className="flex items-center space-x-1.5">
@@ -605,7 +622,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
           <span className="text-emerald-300 font-bold">Bayésien</span>
           {selectedSigmaRun && (
             <span className="text-[10px] text-slate-400">
-              ({selectedSigmaRun.intercepted ? `${selectedSigmaRun.interceptionTime.toFixed(0)} min` : 'Bingo'})
+              ({runOutcomeLabel(selectedSigmaRun)})
             </span>
           )}
         </div>
@@ -617,7 +634,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
           <span className="text-amber-300 font-bold">Râteau IAMSAR</span>
           {selectedNaiveRun && (
             <span className="text-[10px] text-slate-400">
-              ({selectedNaiveRun.intercepted ? `${selectedNaiveRun.interceptionTime.toFixed(0)} min` : 'Bingo'})
+              ({runOutcomeLabel(selectedNaiveRun)})
             </span>
           )}
         </div>

@@ -1,7 +1,7 @@
 import type { ScenarioConfig, HelicopterState } from '../types/simulation';
 import type { BayesianGrid } from './bayesianGrid';
-import { degToRad, radToDeg, normalizeAngle } from './random';
 import { buildBayesianCoverageLeg, type CoverageLeg, type Point } from './coverageBranch';
+import { advanceTowardWaypoint, estimateWaypointTravelMinutes } from './missionContract';
 
 /**
  * Bayesian coverage planner.
@@ -21,26 +21,28 @@ export class SIGMAPlanner {
   }
 
   private moveToward(current: HelicopterState, target: Point, dtMinutes: number): HelicopterState {
-    const distance = Math.hypot(target.x - current.x, target.y - current.y);
-    const travel = Math.min(distance, this.config.helicoMaxSpeed * dtMinutes / 60);
-    const heading = distance > 1e-9
-      ? normalizeAngle(radToDeg(Math.atan2(target.x - current.x, target.y - current.y)))
-      : current.heading;
-    const rad = degToRad(heading);
     return {
-      x: current.x + travel * Math.sin(rad),
-      y: current.y + travel * Math.cos(rad),
-      heading,
-      speed: this.config.helicoMaxSpeed,
-      fuelRemaining: Math.max(0, current.fuelRemaining - dtMinutes),
+      ...advanceTowardWaypoint(
+        current,
+        target,
+        this.config.helicoMaxSpeed,
+        dtMinutes,
+        this.config.windSpeed,
+        this.config.windDirection,
+      ),
       status: 'SEARCHING',
     };
   }
 
   private safeReturn(current: HelicopterState, dtMinutes: number): HelicopterState | null {
     const { frigateX, frigateY, helicoMaxSpeed, bingoFuelBuffer } = this.config;
-    const distance = Math.hypot(frigateX - current.x, frigateY - current.y);
-    const returnTimeMinutes = distance / helicoMaxSpeed * 60;
+    const returnTimeMinutes = estimateWaypointTravelMinutes(
+      current,
+      { x: frigateX, y: frigateY },
+      helicoMaxSpeed,
+      this.config.windSpeed,
+      this.config.windDirection,
+    );
     if (current.fuelRemaining <= 0) {
       return { ...current, fuelRemaining: 0, status: 'OUT_OF_FUEL' };
     }

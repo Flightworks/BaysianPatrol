@@ -101,6 +101,9 @@ export interface MonteCarloRunResult {
     windDirection: number;
     datumX: number;
     datumY: number;
+    targetInitialX: number;
+    targetInitialY: number;
+    datumTimeOffsetMinutes: number;
     frigateX: number;
     frigateY: number;
     frigateSectorDeg: number;

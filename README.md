@@ -10,6 +10,8 @@ Simulateur maritime de recherche et d’interception permettant de comparer troi
 
 Chaque comparaison utilise la même cible, la même météo, la même position de frégate et les mêmes tirages de détection pour les trois stratégies.
 
+Le datum est une référence observée, jamais la position vraie certaine. Pour chaque réalisation, la vérité terrain est tirée séparément à partir des incertitudes spatiale et temporelle, puis progresse dès la première minute selon sa route, sa vitesse et la dérive.
+
 ## Workflow de démonstration
 
 ```bash
@@ -47,7 +49,7 @@ La carte superpose les trois trajectoires sur un fond noir. Ses couches probabil
 - **Posterior radar** : prévision corrigée après les non-détections ; une zone balayée perd de la probabilité ;
 - **Posterior tactique** : posterior radar ajusté selon l’efficacité du capteur et l’angle d’approche.
 
-La vérité terrain est désactivée par défaut. La dispersion des trajectoires cibles Monte-Carlo n’est accessible que lorsque la vérité terrain est volontairement affichée.
+La vérité terrain est désactivée par défaut. Lorsqu’elle est volontairement affichée, la carte distingue le datum fixe de la cible vraie mobile. Le rejeu utilise une trajectoire cible commune aux trois stratégies et continue jusqu’à la fin de la dernière stratégie active, même si une autre a déjà intercepté.
 
 ## Historique local
 
@@ -60,6 +62,8 @@ Python/Gymnasium reste la référence canonique. Le modèle ne pilote pas direct
 ```text
 modèle hybride → waypoint relatif → pilote automatique → geofence → superviseur carburant/RTB
 ```
+
+La vitesse commandée est une vitesse air. Le pilote automatique calcule la vitesse sol et l’angle de crabe à partir du vent : vent de face plus lent, vent arrière plus rapide, vent traversier compensé. Le superviseur de retour utilise la même vitesse sol pour éviter un déclenchement Bingo trop tardif.
 
 Un retour normal est publié comme `SAFE_RTB`. Les violations Bingo, pannes carburant et limites de temps restent des résultats distincts.
 

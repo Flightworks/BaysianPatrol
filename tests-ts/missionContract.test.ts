@@ -5,6 +5,8 @@ import {
   scaleBeliefForObservation,
   buildHybridVector,
   applyRelativeWaypoint,
+  advanceTowardWaypoint,
+  solveGroundTrack,
 } from '../src/engine/missionContract.ts';
 import { SeededRandom } from '../src/engine/random.ts';
 
@@ -55,4 +57,63 @@ test('relative waypoint action east flies east at max speed', () => {
   assert.ok(Math.abs(next.y) < 1e-9);
   assert.equal(next.speed, 140);
   assert.equal(next.heading, 90);
+});
+
+test('headwind reduces ground speed while airspeed stays constant', () => {
+  const solution = solveGroundTrack(120, 90, 20, 90);
+  assert.ok(Math.abs(solution.groundSpeed - 100) < 1e-9);
+
+  const next = advanceTowardWaypoint(
+    { x: 0, y: 0, heading: 90, fuelRemaining: 100 },
+    { x: 100, y: 0 },
+    120,
+    1,
+    20,
+    90,
+  );
+  assert.ok(Math.abs(next.x - 100 / 60) < 1e-9);
+  assert.ok(Math.abs(next.y) < 1e-9);
+  assert.equal(next.speed, 120);
+});
+
+test('tailwind increases ground speed', () => {
+  const solution = solveGroundTrack(120, 90, 20, 270);
+  assert.ok(Math.abs(solution.groundSpeed - 140) < 1e-9);
+});
+
+test('crosswind uses a crab angle while maintaining the intended ground track', () => {
+  const solution = solveGroundTrack(120, 90, 20, 0);
+  assert.ok(solution.airHeading < 90);
+  assert.ok(solution.groundSpeed < 120);
+
+  const next = advanceTowardWaypoint(
+    { x: 0, y: 0, heading: 90, fuelRemaining: 100 },
+    { x: 100, y: 0 },
+    120,
+    1,
+    20,
+    0,
+  );
+  assert.ok(next.x > 0);
+  assert.ok(Math.abs(next.y) < 1e-9);
+  assert.equal(next.speed, 120);
+  assert.equal(next.heading, solution.airHeading);
+});
+
+test('an impossible crosswind is reported and does not fabricate progress on the requested track', () => {
+  const solution = solveGroundTrack(20, 90, 30, 0);
+  assert.equal(solution.trackMaintained, false);
+  assert.equal(solution.groundSpeed, 0);
+
+  const next = advanceTowardWaypoint(
+    { x: 0, y: 0, heading: 90, fuelRemaining: 100 },
+    { x: 100, y: 0 },
+    20,
+    1,
+    30,
+    0,
+  );
+  assert.equal(next.x, 0);
+  assert.equal(next.y, 0);
+  assert.equal(next.speed, 20);
 });

@@ -6,9 +6,10 @@ import type {
   TrioComparisonStats,
   GlobalSimulationResult,
   HelicopterState,
-  HelicoPathPoint
+  HelicoPathPoint,
+  PathPoint,
 } from '../types/simulation';
-import { TargetSim, type RunRealizationParams } from './targetGenerator';
+import { buildCanonicalTargetPath, TargetSim, type RunRealizationParams } from './targetGenerator';
 import { BayesianGrid } from './bayesianGrid';
 import { SIGMAPlanner } from './sigmaAlgorithm';
 import { NaivePlanner } from './naiveAlgorithm';
@@ -16,6 +17,8 @@ import { RLPlanner } from './rlAlgorithm';
 import { calculatePdet } from './radarModel';
 import type { RadarParams } from './radarModel';
 import { normalizeAngle, SeededRandom } from './random';
+import { applySharedTargetReplay } from './playback';
+import { estimateWaypointTravelMinutes } from './missionContract';
 
 /**
  * Executes a single Monte-Carlo simulation run for a given strategy and fixed realization.
@@ -24,14 +27,14 @@ export async function runSingleSimulationWithRealization(
   runId: number,
   strategy: 'SIGMA' | 'NAIVE' | 'RL_MODEL',
   config: ScenarioConfig,
-  realization: RunRealizationParams
+  realization: RunRealizationParams,
+  canonicalTargetPath: readonly PathPoint[],
 ): Promise<MonteCarloRunResult> {
   const {
     helicoEndurance, radarBaseRange,
     dt, meanHeading
   } = config;
 
-  const targetSim = new TargetSim(config, realization);
   const detectionRng = new SeededRandom(realization.seed ^ 0x51f15e);
   
   const runConfig: ScenarioConfig = {
@@ -78,6 +81,7 @@ export async function runSingleSimulationWithRealization(
   let safeReturn = false;
   let outOfBounds = false;
   let interceptPoint: { x: number; y: number } | null = null;
+  let finalTargetStep = 0;
 
   const maxSteps = Math.ceil(helicoEndurance / dt);
   const radarParams: RadarParams = {
@@ -108,7 +112,12 @@ export async function runSingleSimulationWithRealization(
   for (let step = 1; step <= maxSteps; step++) {
     const t = step * dt;
 
-    const targetPoint = targetSim.step(t, dt);
+    const canonicalPoint = canonicalTargetPath[step];
+    if (!canonicalPoint) {
+      throw new Error(`Canonical target path is missing step ${step} at t=${t}`);
+    }
+    const targetPoint = canonicalPoint;
+    finalTargetStep = step;
 
     grid.updatePriorDensity(t);
 
@@ -120,8 +129,13 @@ export async function runSingleSimulationWithRealization(
       helico = await rlPlanner!.planStepAsync(helico, grid, t, dt);
     }
 
-    const distanceHomeAfterMove = Math.hypot(realization.frigateX-helico.x, realization.frigateY-helico.y);
-    const requiredFuelAfterMove = distanceHomeAfterMove/realization.helicoSpeed*60.0;
+    const requiredFuelAfterMove = estimateWaypointTravelMinutes(
+      helico,
+      { x: realization.frigateX, y: realization.frigateY },
+      realization.helicoSpeed,
+      realization.windSpeed,
+      realization.windDirection,
+    );
     if (helico.fuelRemaining < requiredFuelAfterMove) {
       bingoTriggered = true;
     }
@@ -158,6 +172,10 @@ export async function runSingleSimulationWithRealization(
         interceptionTime = t;
         interceptPoint = { x: targetPoint.x, y: targetPoint.y };
         helico.status = 'INTERCEPTED';
+        helicoPath[helicoPath.length - 1] = {
+          ...helicoPath[helicoPath.length - 1],
+          status: 'INTERCEPTED',
+        };
         if (storeSnapshots) {
           heatmapSnapshots.push({
             t,
@@ -204,7 +222,7 @@ export async function runSingleSimulationWithRealization(
     safeReturn,
     outOfBounds,
     outcome,
-    targetPath: targetSim.getPath(),
+    targetPath: canonicalTargetPath.slice(0, finalTargetStep + 1).map(point => ({ ...point })),
     helicoPath,
     interceptPoint,
     runEnv: {
@@ -212,6 +230,9 @@ export async function runSingleSimulationWithRealization(
       windDirection: realization.windDirection,
       datumX: realization.datumX,
       datumY: realization.datumY,
+      targetInitialX: realization.targetInitialX,
+      targetInitialY: realization.targetInitialY,
+      datumTimeOffsetMinutes: realization.datumTimeOffsetMinutes,
       frigateX: realization.frigateX,
       frigateY: realization.frigateY,
       frigateSectorDeg: realization.frigateSectorDeg,
@@ -450,9 +471,13 @@ export async function runMonteCarloSuite(
   for (let k = 1; k <= N; k++) {
     const targetSimHelper = new TargetSim(config, undefined, suiteRng);
     const realization = targetSimHelper.getRealization();
+    const canonicalTargetPath = buildCanonicalTargetPath(config, realization);
+    const pairedRuns: MonteCarloRunResult[] = [];
 
     if (runSIGMA) {
-      sigmaRuns.push(await runSingleSimulationWithRealization(k, 'SIGMA', config, realization));
+      const run = await runSingleSimulationWithRealization(k, 'SIGMA', config, realization, canonicalTargetPath);
+      sigmaRuns.push(run);
+      pairedRuns.push(run);
       completed++;
       if (onProgress && completed % 10 === 0) {
         onProgress((completed / totalTasks) * 100);
@@ -460,7 +485,9 @@ export async function runMonteCarloSuite(
     }
 
     if (runNaive) {
-      naiveRuns.push(await runSingleSimulationWithRealization(k, 'NAIVE', config, realization));
+      const run = await runSingleSimulationWithRealization(k, 'NAIVE', config, realization, canonicalTargetPath);
+      naiveRuns.push(run);
+      pairedRuns.push(run);
       completed++;
       if (onProgress && completed % 10 === 0) {
         onProgress((completed / totalTasks) * 100);
@@ -468,12 +495,16 @@ export async function runMonteCarloSuite(
     }
 
     if (runRL) {
-      rlRuns.push(await runSingleSimulationWithRealization(k, 'RL_MODEL', config, realization));
+      const run = await runSingleSimulationWithRealization(k, 'RL_MODEL', config, realization, canonicalTargetPath);
+      rlRuns.push(run);
+      pairedRuns.push(run);
       completed++;
       if (onProgress && completed % 10 === 0) {
         onProgress((completed / totalTasks) * 100);
       }
     }
+
+    applySharedTargetReplay(pairedRuns, canonicalTargetPath);
   }
 
   const sigmaStats = runSIGMA ? computeStrategyStats(sigmaRuns) : undefined;

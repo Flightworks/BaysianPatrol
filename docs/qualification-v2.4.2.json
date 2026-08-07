@@ -1,0 +1,52 @@
+{
+  "version": "2.4.2",
+  "qualifiedAt": "2026-08-07T14:28:17.762Z",
+  "scenario": "Scénario Standard avec Variabilité Globale",
+  "monteCarloSeed": 2026,
+  "pairedSituations": 250,
+  "executionTimeMs": 91295.5999994278,
+  "contracts": {
+    "totalStrategyRuns": 750,
+    "minimumInitialTargetDatumDistanceNm": 0.2449653653282752,
+    "minimumFirstMinuteTargetMovementNm": 0.10503969301626588,
+    "sharedTargetPaths": true,
+    "sharedReplayHorizon": true,
+    "interceptionsUseCanonicalPath": true,
+    "groundSpeedAffectedRuns": 750
+  },
+  "strategies": {
+    "hybrid": {
+      "successCount": 248,
+      "successRatePercent": 99.2,
+      "meanInterceptionTimeMinutes": 12.870967741935484,
+      "meanFuelConsumedMinutes": 14.052,
+      "safeReturnCount": 2,
+      "safeReturnRatePercent": 0.8,
+      "bingoCount": 0,
+      "bingoRatePercent": 0,
+      "wilson95Percent": [97.1305470416792, 99.78033628796906]
+    },
+    "bayesian": {
+      "successCount": 229,
+      "successRatePercent": 91.6,
+      "meanInterceptionTimeMinutes": 29.240174672489083,
+      "meanFuelConsumedMinutes": 36.944,
+      "safeReturnCount": 13,
+      "safeReturnRatePercent": 5.2,
+      "bingoCount": 0,
+      "bingoRatePercent": 0,
+      "wilson95Percent": [87.50051335864347, 94.44039612333553]
+    },
+    "parallelRake": {
+      "successCount": 247,
+      "successRatePercent": 98.8,
+      "meanInterceptionTimeMinutes": 15.931174089068826,
+      "meanFuelConsumedMinutes": 17.044,
+      "safeReturnCount": 2,
+      "safeReturnRatePercent": 0.8,
+      "bingoCount": 0,
+      "bingoRatePercent": 0,
+      "wilson95Percent": [96.53192195729802, 99.59106801194658]
+    }
+  }
+}

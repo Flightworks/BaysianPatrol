@@ -14,6 +14,11 @@ import numpy as np
 from gymnasium import spaces
 from scipy.ndimage import gaussian_filter, shift
 
+try:
+    from .navigation import advance_towards_waypoint, derive_initial_target_truth, estimate_travel_minutes
+except ImportError:
+    from navigation import advance_towards_waypoint, derive_initial_target_truth, estimate_travel_minutes
+
 
 class BaysianPatrolEnv(gym.Env):
     metadata = {"render_modes": []}
@@ -86,15 +91,33 @@ class BaysianPatrolEnv(gym.Env):
         self.current_speed = self.max_speed
         self.fuel_remaining = self.max_fuel
         self.rtb_active = False
+        self.wind_speed = float(max(0.0, self.np_random.normal(15.0, 4.0)))
+        self.wind_from_direction = float(self.np_random.normal(270.0, 15.0) % 360.0)
 
-        self.target_x = self.datum_x + float(self.np_random.normal(0.0, 2.0))
-        self.target_y = self.datum_y + float(self.np_random.normal(0.0, 2.0))
         if self.curriculum_level <= 1:
             self.target_speed = 0.0
             self.target_heading = math.radians(45.0)
         else:
             self.target_speed = float(np.clip(self.np_random.normal(20.0, 3.0), 5.0, 35.0))
             self.target_heading = math.radians(float(self.np_random.normal(45.0, 12.0)))
+        spatial_offset_x = float(self.np_random.normal(0.0, 2.0))
+        spatial_offset_y = float(self.np_random.normal(0.0, 2.0))
+        datum_time_offset_minutes = float(self.np_random.normal(0.0, 10.0))
+        self.target_current_speed = self.wind_speed * 0.025
+        self.target_current_heading = (self.wind_from_direction + 180.0 + 15.0) % 360.0
+        initial_truth = derive_initial_target_truth(
+            datum_x=self.datum_x,
+            datum_y=self.datum_y,
+            spatial_offset_x=spatial_offset_x,
+            spatial_offset_y=spatial_offset_y,
+            time_offset_minutes=datum_time_offset_minutes,
+            speed=self.target_speed,
+            heading=math.degrees(self.target_heading),
+            current_speed=self.target_current_speed,
+            current_heading=self.target_current_heading,
+        )
+        self.target_x = initial_truth["x"]
+        self.target_y = initial_truth["y"]
         self.belief_speed = 0.0 if self.curriculum_level <= 1 else 20.0
         self.belief_heading = math.radians(45.0)
         self.grid_p = self._initial_belief()
@@ -111,7 +134,15 @@ class BaysianPatrolEnv(gym.Env):
         return float(np.clip(-(p*np.log(p)).sum() / math.log(p.size), 0.0, 1.0))
 
     def _return_time(self) -> float:
-        return math.hypot(self.helico_x-self.frigate_x, self.helico_y-self.frigate_y) / self.max_speed * 60.0
+        return estimate_travel_minutes(
+            x=self.helico_x,
+            y=self.helico_y,
+            waypoint_x=self.frigate_x,
+            waypoint_y=self.frigate_y,
+            airspeed=self.max_speed,
+            wind_speed=self.wind_speed,
+            wind_from_direction=self.wind_from_direction,
+        )
 
     def _fuel_margin(self) -> float:
         return self.fuel_remaining - self._return_time() - self.bingo_buffer
@@ -146,8 +177,10 @@ class BaysianPatrolEnv(gym.Env):
         if self.curriculum_level >= 3:
             self.target_heading += float(self.np_random.normal(0.0, math.radians(1.5)))
         distance = self.target_speed / 60.0 * self.dt
-        self.target_x += distance * math.sin(self.target_heading)
-        self.target_y += distance * math.cos(self.target_heading)
+        current_distance = self.target_current_speed / 60.0 * self.dt
+        current_heading = math.radians(self.target_current_heading)
+        self.target_x += distance * math.sin(self.target_heading) + current_distance * math.sin(current_heading)
+        self.target_y += distance * math.cos(self.target_heading) + current_distance * math.cos(current_heading)
         if self.target_x < self.min_x or self.target_x > self.max_x:
             self.target_x = float(np.clip(self.target_x, self.min_x, self.max_x))
             self.target_heading = -self.target_heading
@@ -158,15 +191,20 @@ class BaysianPatrolEnv(gym.Env):
     def _fly_towards(self, waypoint_x: float, waypoint_y: float) -> None:
         waypoint_x = float(np.clip(waypoint_x, self.min_x, self.max_x))
         waypoint_y = float(np.clip(waypoint_y, self.min_y, self.max_y))
-        dx, dy = waypoint_x-self.helico_x, waypoint_y-self.helico_y
-        if abs(dx) + abs(dy) > 1e-9:
-            self.helico_heading = math.atan2(dx, dy)
+        next_state = advance_towards_waypoint(
+            x=self.helico_x,
+            y=self.helico_y,
+            waypoint_x=waypoint_x,
+            waypoint_y=waypoint_y,
+            airspeed=self.max_speed,
+            dt_minutes=self.dt,
+            wind_speed=self.wind_speed,
+            wind_from_direction=self.wind_from_direction,
+        )
+        self.helico_x = next_state["x"]
+        self.helico_y = next_state["y"]
+        self.helico_heading = math.radians(next_state["air_heading"])
         self.current_speed = self.max_speed
-        distance = self.max_speed / 60.0 * self.dt
-        remaining = math.hypot(dx, dy)
-        travel = min(distance, remaining) if remaining > 0 else 0.0
-        self.helico_x += travel * math.sin(self.helico_heading)
-        self.helico_y += travel * math.cos(self.helico_heading)
 
     def _negative_scan_update(self) -> float:
         dist = np.hypot(self.mesh_x-self.helico_x, self.mesh_y-self.helico_y)

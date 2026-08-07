@@ -29,3 +29,18 @@ export function getPlaybackEndTime(...paths: ReadonlyArray<readonly { t: number 
   }
   return maximum;
 }
+
+export function applySharedTargetReplay<T extends {
+  helicoPath: readonly { t: number }[];
+  targetPath: TimedPoint[];
+}>(runs: T[], canonicalTargetPath: readonly TimedPoint[]): number {
+  const replayEnd = getPlaybackEndTime(...runs.map(run => run.helicoPath));
+  const sharedPath = canonicalTargetPath
+    .filter(point => point.t <= replayEnd)
+    .map(point => ({ ...point }));
+
+  for (const run of runs) {
+    run.targetPath = sharedPath.map(point => ({ ...point }));
+  }
+  return replayEnd;
+}
