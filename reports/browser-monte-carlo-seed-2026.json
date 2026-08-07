@@ -1,0 +1,38 @@
+{
+  "project": "BaysianPatrol",
+  "version": "2.4.0",
+  "scenario": "Scénario Standard avec Variabilité Globale",
+  "runs": 250,
+  "monteCarloSeed": 2026,
+  "browser": "Chromium headless 148.0.7778.167",
+  "executionTimeMs": 74726.60000038147,
+  "javascript": {
+    "consoleErrors": [],
+    "uncaughtExceptions": [],
+    "workerCompleted": true
+  },
+  "strategies": {
+    "hybrid": {
+      "successRatePercent": 100,
+      "meanInterceptionTimeMinutes": 11.996,
+      "meanFuelConsumedMinutes": 11.996,
+      "safeReturnRatePercent": 0,
+      "bingoRatePercent": 0
+    },
+    "bayesian": {
+      "successRatePercent": 93.60000000000001,
+      "meanInterceptionTimeMinutes": 16.435897435897434,
+      "meanFuelConsumedMinutes": 15.952,
+      "safeReturnRatePercent": 0,
+      "bingoRatePercent": 0
+    },
+    "naiveIamsar": {
+      "successRatePercent": 94.8,
+      "meanInterceptionTimeMinutes": 42.434599156118146,
+      "meanFuelConsumedMinutes": 47.32,
+      "safeReturnRatePercent": 4.3999999999999995,
+      "bingoRatePercent": 0
+    }
+  },
+  "source": "Chromium CDP run through the production preview UI; localStorage result captured after the campaign completed."
+}
