@@ -1,4 +1,4 @@
-import { degToRad, normalizeAngle } from './random';
+import { degToRad, normalizeAngle } from './random.ts';
 
 /**
  * Radar Sensor & SER (Radar Cross Section) Model with Environmental Factors (Wind/Sea State).

@@ -5,10 +5,12 @@ Simulateur maritime de recherche et d’interception permettant de comparer troi
 ## Les trois stratégies
 
 1. **Stratégie hybride 2027** — le modèle choisit une direction tactique ; l’exécuteur conserve ce choix sur une branche minimale cohérente avec la portée radar.
-2. **Recherche bayésienne** — choisit un corridor à forte probabilité encore peu couvert, puis termine une branche avant de recalculer.
+2. **Recherche bayésienne** — POMDP approché à un pas : propage le posterior précédent par le modèle de mouvement cible, applique les non-détections, compare les actions selon leur probabilité de détection, leur gain d’information attendu et leur coût de transit, puis replanifie toutes les quatre minutes. Ce n’est pas un solveur POMDP exact à horizon long.
 3. **Balayage parallèle inspiré IAMSAR** — propage le datum pendant le transit et oriente les branches perpendiculairement à la route estimée du mobile, avec un espacement lié à la portée radar.
 
 Chaque comparaison utilise la même cible, la même météo, la même position de frégate et les mêmes tirages de détection pour les trois stratégies.
+
+La recherche bayésienne n’est pas un solveur POMDP exact, qui serait exponentiel sur cette grille. Elle emploie une approximation déterministe et calculable dans le navigateur : observation binaire (détection/non-détection), mise à jour de Bayes, entropie attendue et ensemble fini d’actions candidates. Contrairement au râteau, ses actions ne sont pas contraintes à rester perpendiculaires à la route estimée.
 
 Le datum est une référence observée, jamais la position vraie certaine. Pour chaque réalisation, la vérité terrain est tirée séparément à partir des incertitudes spatiale et temporelle, puis progresse dès la première minute selon sa route, sa vitesse et la dérive.
 

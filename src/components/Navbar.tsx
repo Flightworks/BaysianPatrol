@@ -38,6 +38,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onChangeTab, historyC
       ))}
     </nav>
 
-    <div className="version-block"><span>VERSION</span><strong>2.4.2</strong></div>
+    <div className="version-block"><span>VERSION</span><strong>2.4.3</strong></div>
   </header>
 );

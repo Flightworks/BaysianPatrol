@@ -1,7 +1,8 @@
-import type { ScenarioConfig, GridCell } from '../types/simulation';
-import { degToRad, normalizeAngle } from './random';
-import { calculatePdet } from './radarModel';
-import type { RadarParams } from './radarModel';
+import type { ScenarioConfig, GridCell } from '../types/simulation.ts';
+import { degToRad, normalizeAngle } from './random.ts';
+import { calculatePdet } from './radarModel.ts';
+import type { RadarParams } from './radarModel.ts';
+import { propagateGridBelief } from './beliefTransition.ts';
 
 /**
  * Advanced Bayesian Grid Engine supporting 3 grid modes:
@@ -11,6 +12,8 @@ import type { RadarParams } from './radarModel';
  */
 export class BayesianGrid {
   private config: ScenarioConfig;
+  private beliefInitialized = false;
+  private lastPredictionMinutes = 0;
   public widthCells: number;
   public heightCells: number;
   public cells: GridCell[][];
@@ -18,9 +21,6 @@ export class BayesianGrid {
   public probsClassical: number[];
   public probsBayesianStandard: number[];
   public probsBayesianEvolved: number[];
-  
-  public clearanceStandard: number[]; // Accumulated non-detection factor L_standard(M_i)
-  public clearanceEvolved: number[];  // Accumulated non-detection factor L_evolved(M_i)
   
   public minX: number;
   public maxX: number;
@@ -45,8 +45,6 @@ export class BayesianGrid {
     this.probsBayesianStandard = new Array(totalCells).fill(0);
     this.probsBayesianEvolved = new Array(totalCells).fill(0);
     
-    this.clearanceStandard = new Array(totalCells).fill(1.0);
-    this.clearanceEvolved = new Array(totalCells).fill(1.0);
 
     for (let j = 0; j < this.heightCells; j++) {
       const row: GridCell[] = [];
@@ -74,126 +72,119 @@ export class BayesianGrid {
   }
 
   /**
-   * Recompute prior density P_classical(M_i, t) and update both Bayesian posteriors.
+   * Recompute the analytical classical layer, then predict both Bayesian
+   * posteriors from their previous state through the target transition model.
    */
   public updatePriorDensity(tMinutes: number): void {
     const {
       datumX, datumY, sigmaDatumX, sigmaDatumY,
       meanHeading, meanSpeed, sigmaSpeed, sigmaHeading, sigmaRouteDrift,
-      windSpeed, windDirection
+      windSpeed, windDirection,
     } = this.config;
-
-    const tHours = tMinutes / 60.0;
-    
-    // Wind surface current drift
+    const tHours = tMinutes / 60;
     const currentSpeed = windSpeed * 0.025;
     const currentDir = normalizeAngle(windDirection + 180 + 15);
     const currRad = degToRad(currentDir);
     const currVx = currentSpeed * Math.sin(currRad);
     const currVy = currentSpeed * Math.cos(currRad);
-
-    // Target mean velocity vector
     const meanRad = degToRad(meanHeading);
     const meanVx = meanSpeed * Math.sin(meanRad) + currVx;
     const meanVy = meanSpeed * Math.cos(meanRad) + currVy;
-
-    // Mean target position at time t
     const muX = datumX + meanVx * tHours;
     const muY = datumY + meanVy * tHours;
-
-    // Expanding variances along and cross target track
-    const sigmaAlong = Math.sqrt(
-      Math.pow(sigmaDatumX, 2) +
-      Math.pow(sigmaSpeed * tHours, 2) +
-      Math.pow(sigmaRouteDrift * 0.3 * Math.sqrt(Math.max(0.01, tHours)), 2) +
-      9.0
-    );
-
-    const sigmaCross = Math.sqrt(
-      Math.pow(sigmaDatumY, 2) +
-      Math.pow(meanSpeed * Math.sin(degToRad(sigmaHeading)) * tHours, 2) +
-      Math.pow(sigmaRouteDrift * 0.3 * Math.sqrt(Math.max(0.01, tHours)), 2) +
-      9.0
-    );
-
-    const varAlong = sigmaAlong * sigmaAlong;
-    const varCross = sigmaCross * sigmaCross;
-
+    const routeVariance = Math.pow(sigmaRouteDrift * 0.3, 2) * Math.max(0.01, tHours);
+    const crossSpeed = meanSpeed * Math.sin(degToRad(sigmaHeading));
+    const processAlongVariance = Math.pow(sigmaSpeed * tHours, 2) + routeVariance;
+    const processCrossVariance = Math.pow(crossSpeed * tHours, 2) + routeVariance;
     const sinHeading = Math.sin(meanRad);
     const cosHeading = Math.cos(meanRad);
-    const normFactor = 1.0 / (2.0 * Math.PI * sigmaAlong * sigmaCross);
+    const varianceX = sigmaDatumX * sigmaDatumX + 9
+      + processAlongVariance * sinHeading * sinHeading
+      + processCrossVariance * cosHeading * cosHeading;
+    const varianceY = sigmaDatumY * sigmaDatumY + 9
+      + processAlongVariance * cosHeading * cosHeading
+      + processCrossVariance * sinHeading * sinHeading;
+    const covarianceXY = (processAlongVariance - processCrossVariance) * sinHeading * cosHeading;
+    const determinant = varianceX * varianceY - covarianceXY * covarianceXY;
+    if (!(determinant > 0) || !Number.isFinite(determinant)) {
+      throw new Error('Classical belief covariance must be positive definite');
+    }
+    const normFactor = 1 / (2 * Math.PI * Math.sqrt(determinant));
 
-    let sumClassical = 0.0;
-    let sumStandard = 0.0;
-    let sumEvolved = 0.0;
-    let idx = 0;
-
-    for (let j = 0; j < this.heightCells; j++) {
-      for (let i = 0; i < this.widthCells; i++) {
+    let sumClassical = 0;
+    let index = 0;
+    for (let j = 0; j < this.heightCells; j += 1) {
+      for (let i = 0; i < this.widthCells; i += 1) {
         const cell = this.cells[j][i];
-        
         const dx = cell.x - muX;
         const dy = cell.y - muY;
-
-        const uAlong = dx * sinHeading + dy * cosHeading;
-        const uCross = -dx * cosHeading + dy * sinHeading;
-
-        const exponent = -0.5 * ((uAlong * uAlong) / varAlong + (uCross * uCross) / varCross);
-        let pPrior = 0.0;
-        
-        if (exponent > -25.0) {
-          pPrior = Math.exp(exponent) * normFactor;
-        }
-
-        cell.pClassical = pPrior;
-        this.probsClassical[idx] = pPrior;
-        sumClassical += pPrior;
-
-        // Standard Bayesian Posterior
-        const pStdUnnorm = pPrior * this.clearanceStandard[idx];
-        cell.pBayesianStandard = pStdUnnorm;
-        this.probsBayesianStandard[idx] = pStdUnnorm;
-        sumStandard += pStdUnnorm;
-
-        // Evolved Bayesian Posterior (Perpendicular Approach Boost)
-        const pEvoUnnorm = pPrior * this.clearanceEvolved[idx];
-        cell.pBayesianEvolved = pEvoUnnorm;
-        this.probsBayesianEvolved[idx] = pEvoUnnorm;
-        sumEvolved += pEvoUnnorm;
-
-        cell.pPresence = pEvoUnnorm;
-
-        idx++;
+        const quadratic = (
+          varianceY * dx * dx
+          - 2 * covarianceXY * dx * dy
+          + varianceX * dy * dy
+        ) / determinant;
+        const exponent = -0.5 * quadratic;
+        const probability = exponent > -25 ? Math.exp(exponent) * normFactor : 0;
+        cell.pClassical = probability;
+        this.probsClassical[index] = probability;
+        sumClassical += probability;
+        index += 1;
       }
     }
+    if (!(sumClassical > 0)) throw new Error('Classical belief contains no mass');
+    for (index = 0; index < this.probsClassical.length; index += 1) {
+      this.probsClassical[index] /= sumClassical;
+    }
 
-    // Normalize all distributions over search grid
-    const invClassical = sumClassical > 0 ? 1.0 / sumClassical : 1.0;
-    const invStandard = sumStandard > 0 ? 1.0 / sumStandard : 1.0;
-    const invEvolved = sumEvolved > 0 ? 1.0 / sumEvolved : 1.0;
+    if (!this.beliefInitialized || tMinutes < this.lastPredictionMinutes) {
+      this.probsBayesianStandard = [...this.probsClassical];
+      this.probsBayesianEvolved = [...this.probsClassical];
+      this.beliefInitialized = true;
+    } else if (tMinutes > this.lastPredictionMinutes) {
+      const previousHours = this.lastPredictionMinutes / 60;
+      const deltaHours = (tMinutes - this.lastPredictionMinutes) / 60;
+      const routeVarianceAt = (hours: number): number =>
+        Math.pow(sigmaRouteDrift * 0.3, 2) * Math.max(0.01, hours);
+      const alongVarianceAt = (hours: number): number =>
+        Math.pow(sigmaSpeed * hours, 2) + routeVarianceAt(hours);
+      const crossVarianceAt = (hours: number): number =>
+        Math.pow(crossSpeed * hours, 2) + routeVarianceAt(hours);
+      const meanGroundSpeed = Math.hypot(meanVx, meanVy);
+      const transitionHeading = meanGroundSpeed > 1e-12
+        ? normalizeAngle(Math.atan2(meanVx, meanVy) * 180 / Math.PI)
+        : normalizeAngle(meanHeading);
+      const transition = {
+        width: this.widthCells,
+        height: this.heightCells,
+        cellSize: this.config.gridCellSize,
+        headingDeg: transitionHeading,
+        distance: meanGroundSpeed * deltaHours,
+        sigmaAlong: Math.sqrt(Math.max(0, alongVarianceAt(tHours) - alongVarianceAt(previousHours))),
+        sigmaCross: Math.sqrt(Math.max(0, crossVarianceAt(tHours) - crossVarianceAt(previousHours))),
+      };
+      this.probsBayesianStandard = propagateGridBelief(this.probsBayesianStandard, transition);
+      this.probsBayesianEvolved = propagateGridBelief(this.probsBayesianEvolved, transition);
+    }
 
-    idx = 0;
-    for (let j = 0; j < this.heightCells; j++) {
-      for (let i = 0; i < this.widthCells; i++) {
-        this.cells[j][i].pClassical *= invClassical;
-        this.probsClassical[idx] *= invClassical;
-
-        this.cells[j][i].pBayesianStandard *= invStandard;
-        this.probsBayesianStandard[idx] *= invStandard;
-
-        this.cells[j][i].pBayesianEvolved *= invEvolved;
-        this.probsBayesianEvolved[idx] *= invEvolved;
-        
-        this.cells[j][i].pPresence = this.cells[j][i].pBayesianEvolved;
-        idx++;
+    this.lastPredictionMinutes = tMinutes;
+    index = 0;
+    for (let j = 0; j < this.heightCells; j += 1) {
+      for (let i = 0; i < this.widthCells; i += 1) {
+        const cell = this.cells[j][i];
+        cell.pClassical = this.probsClassical[index];
+        cell.pBayesianStandard = this.probsBayesianStandard[index];
+        cell.pBayesianEvolved = this.probsBayesianEvolved[index];
+        cell.pPresence = this.probsBayesianEvolved[index];
+        index += 1;
       }
     }
   }
 
   /**
    * Apply Bayesian Update upon radar scan from helicopter position (hx, hy) heading helicoHeadingDeg.
-   * Calculates BOTH Standard Bayesian clearance and Evolved Perpendicular-Approach clearance continuously.
-   * Includes temporal memory relaxation (targets move, so probability flows back to previously scanned areas).
+   * Negative evidence remains in the posterior and moves through the target
+   * transition model. The half-life below affects only the visual coverage
+   * memory, never the Bayesian belief.
    */
   public updateBayesianScan(
     hx: number,
@@ -201,17 +192,17 @@ export class BayesianGrid {
     helicoHeadingDeg: number,
     radarParams: RadarParams,
     dtMinutes: number = 1.0,
-    memoryHalfLifeMinutes: number = 20.0
+    coverageHalfLifeMinutes: number = 20.0
   ): void {
     const { meanHeading } = this.config;
     const rMax = radarParams.baseRange * 1.4;
     let idx = 0;
 
-    // Temporal Memory Decay: Scanned areas relax back towards 1.0 (unscanned state) over time
-    const decayFactor = Math.exp((-Math.LN2 / memoryHalfLifeMinutes) * dtMinutes);
-    for (let i = 0; i < this.clearanceStandard.length; i++) {
-      this.clearanceStandard[i] = 1.0 - (1.0 - this.clearanceStandard[i]) * decayFactor;
-      this.clearanceEvolved[i] = 1.0 - (1.0 - this.clearanceEvolved[i]) * decayFactor;
+    if (!(coverageHalfLifeMinutes > 0) || !Number.isFinite(coverageHalfLifeMinutes)) {
+      throw new Error('Coverage half-life must be positive and finite');
+    }
+    const decayFactor = Math.exp((-Math.LN2 / coverageHalfLifeMinutes) * dtMinutes);
+    for (let i = 0; i < this.probsBayesianStandard.length; i++) {
       this.cells[Math.floor(i / this.widthCells)][i % this.widthCells].scanMemory *= decayFactor;
     }
 
@@ -238,12 +229,12 @@ export class BayesianGrid {
               cell.scanned = true;
               cell.scanMemory = 1.0;
 
-              // 1. Standard Bayesian Clearance
-              this.clearanceStandard[idx] *= (1.0 - pDetBase);
+              // Standard posterior after a negative observation.
+              this.probsBayesianStandard[idx] *= (1.0 - pDetBase);
 
-              // 2. Evolved Bayesian Clearance (Boosted when helicopter route is perpendicular to target track)
+              // Tactical posterior, boosted for a perpendicular sensor approach.
               const pDetEvolved = Math.min(0.98, pDetBase * perpApproachMultiplier);
-              this.clearanceEvolved[idx] *= (1.0 - pDetEvolved);
+              this.probsBayesianEvolved[idx] *= (1.0 - pDetEvolved);
             }
           }
         }
@@ -258,12 +249,12 @@ export class BayesianGrid {
 
     for (let j = 0; j < this.heightCells; j++) {
       for (let i = 0; i < this.widthCells; i++) {
-        const pStdUnnorm = this.probsClassical[idx] * this.clearanceStandard[idx];
+        const pStdUnnorm = this.probsBayesianStandard[idx];
         this.cells[j][i].pBayesianStandard = pStdUnnorm;
         this.probsBayesianStandard[idx] = pStdUnnorm;
         sumStandard += pStdUnnorm;
 
-        const pEvoUnnorm = this.probsClassical[idx] * this.clearanceEvolved[idx];
+        const pEvoUnnorm = this.probsBayesianEvolved[idx];
         this.cells[j][i].pBayesianEvolved = pEvoUnnorm;
         this.probsBayesianEvolved[idx] = pEvoUnnorm;
         sumEvolved += pEvoUnnorm;
@@ -272,8 +263,12 @@ export class BayesianGrid {
       }
     }
 
-    const invStandard = sumStandard > 0 ? 1.0 / sumStandard : 1.0;
-    const invEvolved = sumEvolved > 0 ? 1.0 / sumEvolved : 1.0;
+    if (!(sumStandard > 0) || !Number.isFinite(sumStandard)
+      || !(sumEvolved > 0) || !Number.isFinite(sumEvolved)) {
+      throw new Error('Bayesian posterior must retain positive mass');
+    }
+    const invStandard = 1.0 / sumStandard;
+    const invEvolved = 1.0 / sumEvolved;
 
     idx = 0;
     for (let j = 0; j < this.heightCells; j++) {

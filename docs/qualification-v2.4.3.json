@@ -1,0 +1,81 @@
+{
+  "version": "2.4.3",
+  "status": "qualified-release-candidate",
+  "qualifiedAt": "2026-08-14T16:24:26+02:00",
+  "qualificationHost": "hp-flightworks",
+  "scenario": "Scénario Standard avec Variabilité Globale",
+  "monteCarloSeed": 2026,
+  "pairedSituations": 250,
+  "executionTimeMs": 114650.89999999851,
+  "contracts": {
+    "planner": "one-step-approximate-belief-space-pomdp",
+    "observationModel": "binary-detection-or-no-detection",
+    "beliefTransition": "five-point-cubature-chapman-kolmogorov",
+    "replanningHorizonMinutes": 4,
+    "usesPreviousPosterior": true,
+    "negativeObservationsPropagateWithTargetMotion": true,
+    "usesHiddenGroundTruth": false,
+    "candidateActionsConstrainedToIamsarAxis": false,
+    "maximumAggregatedBeliefPoints": 400,
+    "maximumRawBeliefCells": 100000,
+    "maximumCandidateActions": 18,
+    "maximumSamplesPerAction": 12,
+    "typescriptTestsPassed": 66,
+    "pythonTestsPassed": 25,
+    "pythonExecutionMode": "cpu",
+    "buildPassed": true,
+    "lintErrors": 0,
+    "bingoViolations": 0
+  },
+  "strategies": {
+    "bayesianApproximatePomdp": {
+      "successes": 250,
+      "successRatePct": 100,
+      "wilsonLcb95Pct": 98.48667005045553,
+      "meanInterceptionTimeMinutes": 11.56,
+      "meanFuelConsumedMinutes": 11.56,
+      "safeReturns": 0,
+      "bingoViolations": 0
+    },
+    "hybrid2027": {
+      "successes": 250,
+      "successRatePct": 100,
+      "wilsonLcb95Pct": 98.48667005045553,
+      "meanInterceptionTimeMinutes": 13.528,
+      "meanFuelConsumedMinutes": 13.528,
+      "safeReturns": 0,
+      "bingoViolations": 0
+    },
+    "parallelRake": {
+      "successes": 247,
+      "successRatePct": 98.8,
+      "wilsonLcb95Pct": 96.53192195729802,
+      "meanInterceptionTimeMinutes": 15.931174089068826,
+      "meanFuelConsumedMinutes": 17.044,
+      "safeReturns": 2,
+      "bingoViolations": 0
+    }
+  },
+  "trajectoryComparison": {
+    "meanSynchronizedDistanceNm": 3.854472012986395,
+    "meanSymmetricNearestDistanceNm": 3.7847574191879785,
+    "bayesianSegmentsParallelToRakeAxisPct": 18.639853479853482,
+    "previousBayesianSegmentsParallelToRakeAxisPct": 56.39153722846684,
+    "bayesianMeanTurns": 0.252,
+    "rakeMeanTurns": 0.98,
+    "controlledRun": {
+      "bayesianInterceptionMinutes": 18,
+      "rakeInterceptionMinutes": 60
+    }
+  },
+  "comparison": {
+    "bayesianTimeGainVsRakeMinutes": 4.371174089068825,
+    "bayesianFuelGainVsRakeMinutes": 5.484
+  },
+  "knownLimits": [
+    "The planner uses a one-step action value with four-minute receding-horizon replanning, not an exact long-horizon POMDP solver.",
+    "The target transition is approximated by five deterministic cubature points on the finite search grid.",
+    "Bilinear grid deposition adds at most one quarter cell squared of variance per axis for a fractional displacement.",
+    "Probability leaving the finite grid is conservatively projected onto the nearest boundary cell."
+  ]
+}
