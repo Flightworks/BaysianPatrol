@@ -31,20 +31,30 @@ class BaysianPatrolEnv(gym.Env):
         penalty_bingo: float = 10.0,
         curriculum_level: int = 4,
         reward_exploration: float | None = None,
+        area_width: float = 60.0,
+        area_height: float = 60.0,
+        radar_range: float = 4.0,
+        spatial_sigma: float = 20.0,
+        time_sigma_minutes: float = 60.0,
     ):
         super().__init__()
         self.grid_size = 32
-        self.area_width = self.area_height = 100.0
+        self.area_width = float(area_width)
+        self.area_height = float(area_height)
         self.half_width = self.area_width / 2.0
         self.half_height = self.area_height / 2.0
-        self.min_x = self.min_y = -50.0
-        self.max_x = self.max_y = 50.0
+        self.min_x = -self.half_width
+        self.max_x = self.half_width
+        self.min_y = -self.half_height
+        self.max_y = self.half_height
         self.dt = 1.0
         self.max_steps = 180
         self.max_fuel = 180.0
         self.max_speed = 140.0
         self.min_speed = 60.0
-        self.radar_range = 15.0
+        self.radar_range = float(radar_range)
+        self.spatial_sigma = float(spatial_sigma)
+        self.time_sigma_minutes = float(time_sigma_minutes)
         self.bingo_buffer = 15.0
         self.rtb_radius = 1.0
         self.curriculum_level = int(curriculum_level)
@@ -73,8 +83,25 @@ class BaysianPatrolEnv(gym.Env):
         return (values / values.sum()).astype(np.float32)
 
     def _initial_belief(self) -> np.ndarray:
-        sigma = 10.0 if self.curriculum_level <= 1 else 15.0
-        p = np.exp(-0.5 * (((self.mesh_x-self.datum_x)/sigma)**2 + ((self.mesh_y-self.datum_y)/sigma)**2))
+        heading = self.belief_heading
+        current_heading = math.radians(self.target_current_heading)
+        mean_vx = self.belief_speed * math.sin(heading) + self.target_current_speed * math.sin(current_heading)
+        mean_vy = self.belief_speed * math.cos(heading) + self.target_current_speed * math.cos(current_heading)
+        sigma_time_hours_sq = (self.time_sigma_minutes / 60.0) ** 2
+        variance_x = self.spatial_sigma ** 2 + 9.0 + sigma_time_hours_sq * mean_vx ** 2
+        variance_y = self.spatial_sigma ** 2 + 9.0 + sigma_time_hours_sq * mean_vy ** 2
+        covariance_xy = sigma_time_hours_sq * mean_vx * mean_vy
+        determinant = variance_x * variance_y - covariance_xy ** 2
+        if not math.isfinite(determinant) or determinant <= 0.0:
+            raise ValueError("Initial belief covariance must be positive definite")
+        dx = self.mesh_x - self.datum_x
+        dy = self.mesh_y - self.datum_y
+        quadratic = (
+            variance_y * dx ** 2
+            - 2.0 * covariance_xy * dx * dy
+            + variance_x * dy ** 2
+        ) / determinant
+        p = np.exp(-0.5 * quadratic)
         return self._normalise_probability(p)
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
@@ -82,8 +109,8 @@ class BaysianPatrolEnv(gym.Env):
         del options
         self.steps = 0
         self.elapsed_min = 0.0
-        self.frigate_x = float(self.np_random.uniform(-35.0, 35.0))
-        self.frigate_y = float(self.np_random.uniform(-35.0, 35.0))
+        self.frigate_x = float(self.np_random.uniform(self.min_x, self.max_x))
+        self.frigate_y = float(self.np_random.uniform(self.min_y, self.max_y))
         self.datum_x = float(self.np_random.uniform(-20.0, 20.0))
         self.datum_y = float(self.np_random.uniform(-20.0, 20.0))
         self.helico_x, self.helico_y = self.frigate_x, self.frigate_y
@@ -100,9 +127,9 @@ class BaysianPatrolEnv(gym.Env):
         else:
             self.target_speed = float(np.clip(self.np_random.normal(20.0, 3.0), 5.0, 35.0))
             self.target_heading = math.radians(float(self.np_random.normal(45.0, 12.0)))
-        spatial_offset_x = float(self.np_random.normal(0.0, 2.0))
-        spatial_offset_y = float(self.np_random.normal(0.0, 2.0))
-        datum_time_offset_minutes = float(self.np_random.normal(0.0, 10.0))
+        spatial_offset_x = float(self.np_random.normal(0.0, self.spatial_sigma))
+        spatial_offset_y = float(self.np_random.normal(0.0, self.spatial_sigma))
+        datum_time_offset_minutes = float(self.np_random.normal(0.0, self.time_sigma_minutes))
         self.target_current_speed = self.wind_speed * 0.025
         self.target_current_heading = (self.wind_from_direction + 180.0 + 15.0) % 360.0
         initial_truth = derive_initial_target_truth(
@@ -116,6 +143,34 @@ class BaysianPatrolEnv(gym.Env):
             current_speed=self.target_current_speed,
             current_heading=self.target_current_heading,
         )
+        truth_draws = 1
+        while not (
+            self.min_x <= initial_truth["x"] <= self.max_x
+            and self.min_y <= initial_truth["y"] <= self.max_y
+        ) and truth_draws < 1000:
+            spatial_offset_x = float(self.np_random.normal(0.0, self.spatial_sigma))
+            spatial_offset_y = float(self.np_random.normal(0.0, self.spatial_sigma))
+            datum_time_offset_minutes = float(self.np_random.normal(0.0, self.time_sigma_minutes))
+            if self.curriculum_level > 1:
+                self.target_speed = float(np.clip(self.np_random.normal(20.0, 3.0), 5.0, 35.0))
+                self.target_heading = math.radians(float(self.np_random.normal(45.0, 12.0)))
+            initial_truth = derive_initial_target_truth(
+                datum_x=self.datum_x,
+                datum_y=self.datum_y,
+                spatial_offset_x=spatial_offset_x,
+                spatial_offset_y=spatial_offset_y,
+                time_offset_minutes=datum_time_offset_minutes,
+                speed=self.target_speed,
+                heading=math.degrees(self.target_heading),
+                current_speed=self.target_current_speed,
+                current_heading=self.target_current_heading,
+            )
+            truth_draws += 1
+        if not (
+            self.min_x <= initial_truth["x"] <= self.max_x
+            and self.min_y <= initial_truth["y"] <= self.max_y
+        ):
+            raise RuntimeError("Unable to draw initial target truth inside the search area after 1000 attempts")
         self.target_x = initial_truth["x"]
         self.target_y = initial_truth["y"]
         self.belief_speed = 0.0 if self.curriculum_level <= 1 else 20.0

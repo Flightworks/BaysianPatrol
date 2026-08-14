@@ -89,7 +89,7 @@ Le modèle Behavior Cloning et le candidat PPO sont rejoués sur les mêmes 500 
 3. meilleur taux de réussite prudent, calculé avec la borne de Wilson à 95 % ;
 4. meilleur temps moyen.
 
-Les trois entraînements indépendants, seeds 2026, 2027 et 2028, ont tous retenu Behavior Cloning :
+Sur l'ancien scénario, les trois entraînements indépendants, seeds 2026, 2027 et 2028, avaient tous retenu Behavior Cloning :
 
 | seed | résultat | détection | Bingo | sorties de zone | temps moyen |
 |---:|---|---:|---:|---:|---:|
@@ -97,7 +97,7 @@ Les trois entraînements indépendants, seeds 2026, 2027 et 2028, ont tous reten
 | 2027 | Behavior Cloning | 500/500 | 0 | 0 | 9,608 min |
 | 2028 | Behavior Cloning | 500/500 | 0 | 0 | 9,596 min |
 
-La stratégie active de l'application est donc la version Behavior Cloning seed 2027. Le choix n'est pas laissé à l'utilisateur pendant une campagne.
+Ces chiffres appartiennent à l'ancienne distribution, plus facile. Sur le scénario v2.4.4 `4 NM / 20 NM / 60 min`, l'ancien ONNX seed 2027 obtient 198 interceptions sur 500. Le Behavior Cloning v2.4.4 seed 2026 en obtient 275 sur 500 dans sa version ONNX, sans Bingo ni sortie de zone. Il devient donc la stratégie hybride active. Le choix n'est pas laissé à l'utilisateur pendant une campagne.
 
 ## Ce que le réseau ne peut pas faire
 
@@ -123,7 +123,7 @@ Le seuil d'écart accepté est `0,0001`. Les écarts mesurés sont de l'ordre de
 
 ## Limites des résultats
 
-Les 1 500 épisodes qualifiés montrent une bonne stabilité sur le protocole utilisé. Ils ne constituent pas une garantie pour toutes les missions.
+Les évaluations historiques et la qualification v2.4.4 montrent une stabilité sur leurs protocoles respectifs. Elles ne constituent pas une garantie pour toutes les missions.
 
 Il faut encore évaluer séparément les cas difficiles : tempête, très forte incertitude du datum, cible rapide ou manœuvrante, zone inhabituelle et changements de cap de la frégate.
 
@@ -133,7 +133,8 @@ Le simulateur aide à comparer les stratégies. Il ne remplace ni la doctrine op
 
 - Environnement : [`python/baysian_patrol_env.py`](../python/baysian_patrol_env.py)
 - Entraînement : [`python/hybrid_train.py`](../python/hybrid_train.py)
-- Qualification : [`python/hybrid_v231_qualification.json`](../python/hybrid_v231_qualification.json)
+- Qualification historique : [`python/hybrid_v231_qualification.json`](../python/hybrid_v231_qualification.json)
+- Qualification v2.4.4 : [`qualification-v2.4.4.json`](qualification-v2.4.4.json)
 - Export web : [`python/export_onnx.py`](../python/export_onnx.py)
 
 Vérification locale :

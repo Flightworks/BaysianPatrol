@@ -147,6 +147,31 @@ test('transition rejects more than 100000 grid cells before allocation', () => {
   }), /100000/);
 });
 
+test('initial belief includes temporal uncertainty along the estimated route', () => {
+  const temporalGrid = new BayesianGrid({
+    ...config,
+    searchAreaWidth: 120,
+    searchAreaHeight: 120,
+    datumX: 0,
+    datumY: 0,
+    sigmaDatumX: 1,
+    sigmaDatumY: 1,
+    meanHeading: 90,
+    meanSpeed: 10,
+    sigmaT: 60,
+    sigmaSpeed: 0,
+    sigmaHeading: 0,
+    windSpeed: 0,
+  });
+  const cells = temporalGrid.cells.flat();
+  const meanX = cells.reduce((sum, cell) => sum + cell.x * cell.pClassical, 0);
+  const meanY = cells.reduce((sum, cell) => sum + cell.y * cell.pClassical, 0);
+  const varianceX = cells.reduce((sum, cell) => sum + Math.pow(cell.x - meanX, 2) * cell.pClassical, 0);
+  const varianceY = cells.reduce((sum, cell) => sum + Math.pow(cell.y - meanY, 2) * cell.pClassical, 0);
+  assert.ok(Math.abs(varianceX - 110) < 2, `varianceX=${varianceX}`);
+  assert.ok(Math.abs(varianceY - 10) < 0.5, `varianceY=${varianceY}`);
+});
+
 test('classical datum covariance remains aligned to map axes for an oblique route', () => {
   const covarianceGrid = new BayesianGrid({
     ...config,

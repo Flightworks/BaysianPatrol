@@ -64,3 +64,18 @@ test('one canonical target path is generated for the complete paired realization
   const unevenPath = buildCanonicalTargetPath(unevenConfig, realization);
   assert.equal(unevenPath.at(-1)?.t, 12);
 });
+
+test('standard scenario conditions initial target truth on the search area', () => {
+  const config = PRESETS[0].config;
+  const suiteRng = new SeededRandom(config.monteCarloSeed ?? 2026);
+  const minX = config.searchAreaCenterX - config.searchAreaWidth / 2;
+  const maxX = config.searchAreaCenterX + config.searchAreaWidth / 2;
+  const minY = config.searchAreaCenterY - config.searchAreaHeight / 2;
+  const maxY = config.searchAreaCenterY + config.searchAreaHeight / 2;
+
+  for (let run = 0; run < 250; run += 1) {
+    const realization = new TargetSim(config, undefined, suiteRng).getRealization();
+    assert.ok(realization.targetInitialX >= minX && realization.targetInitialX <= maxX);
+    assert.ok(realization.targetInitialY >= minY && realization.targetInitialY <= maxY);
+  }
+});

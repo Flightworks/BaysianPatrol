@@ -1,0 +1,132 @@
+{
+  "version": "2.4.4",
+  "status": "qualified",
+  "qualifiedAt": "2026-08-14T23:16:42Z",
+  "qualificationHost": "hp-flightworks",
+  "scenario": "Recherche réaliste d’une embarcation rapide",
+  "monteCarloSeed": 2026,
+  "pairedRealizations": 250,
+  "defaults": {
+    "radarRangeNm": 4,
+    "spatialStandardDeviationNm": { "x": 20, "y": 20 },
+    "timeStandardDeviationMinutes": 60,
+    "searchAreaNm": { "width": 60, "height": 60 },
+    "datumNm": { "x": -15, "y": -15 }
+  },
+  "modelConsistency": {
+    "initialTruthConditionedOnSearchArea": true,
+    "initialTruthsInsideSearchArea": 250,
+    "initialTruthsOutsideSearchArea": 0,
+    "meanDistanceFromDatumNm": 23.732091935868706,
+    "maxDistanceFromDatumNm": 57.638731627581016,
+    "medianAbsoluteTimeOffsetMinutes": 31.749914617539545,
+    "p95AbsoluteTimeOffsetMinutes": 99.87572606519247,
+    "timeUncertaintyIncludedInTypescriptBelief": true,
+    "timeUncertaintyIncludedInPythonBelief": true,
+    "pairedCanonicalTargetTruth": true,
+    "radarDrawIndexedByRealizationSeedAndTimeStep": true,
+    "safeReturnTerminalBeforeDetection": true
+  },
+  "results": {
+    "promotedHybridV244": {
+      "interceptions": 96,
+      "interceptionRatePct": 38.4,
+      "wilsonLcb95Pct": 32.58981738809541,
+      "meanInterceptionTimeMinutes": 61.760416666666664,
+      "meanFuelConsumed": 122.436,
+      "bingoCount": 0,
+      "safeReturnCount": 153,
+      "safeReturnRatePct": 61.2,
+      "interceptionsPlusSafeReturns": 249
+    },
+    "pomdpApproximated": {
+      "interceptions": 89,
+      "interceptionRatePct": 35.6,
+      "wilsonLcb95Pct": 29.92352701441643,
+      "meanInterceptionTimeMinutes": 56.8876404494382,
+      "meanFuelConsumed": 124.128,
+      "bingoCount": 0,
+      "safeReturnCount": 161,
+      "safeReturnRatePct": 64.4,
+      "interceptionsPlusSafeReturns": 250
+    },
+    "parallelRake": {
+      "interceptions": 32,
+      "interceptionRatePct": 12.8,
+      "wilsonLcb95Pct": 9.214637228076343,
+      "meanInterceptionTimeMinutes": 30.875,
+      "meanFuelConsumed": 144.556,
+      "bingoCount": 0,
+      "safeReturnCount": 217,
+      "safeReturnRatePct": 86.8,
+      "interceptionsPlusSafeReturns": 249
+    }
+  },
+  "trajectoryDivergence": {
+    "meanSynchronizedDistanceNm": 25.60382640281766,
+    "meanSymmetricNearestDistanceNm": 11.175036474468223,
+    "pomdpParallelToRakeAxisPct": 15.214544801896537,
+    "rakeParallelToRakeAxisPct": 60.94208519470936,
+    "pomdpMeanTurns": 18.632,
+    "rakeMeanTurns": 11.544
+  },
+  "training": {
+    "domainNote": "Python/Gymnasium shares the v2.4.4 4/20/60 uncertainty contract and safety gates but deliberately randomizes additional physical parameters. Python results are training diagnostics, not a numerical reproduction of the browser campaign.",
+    "expertBaseline": {
+      "evaluationEpisodes": 500,
+      "successes": 260,
+      "successRatePct": 52.0,
+      "wilsonLcb95Pct": 47.622265187905796,
+      "bingoFailures": 0,
+      "outOfBounds": 0
+    },
+    "previousOnnx2027": {
+      "evaluationEpisodes": 500,
+      "successes": 198,
+      "successRatePct": 39.6,
+      "wilsonLcb95Pct": 35.408095329434175,
+      "bingoFailures": 0,
+      "outOfBounds": 0
+    },
+    "behaviorCloningV244": {
+      "trainingSeed": 2026,
+      "demonstrationEpisodes": 500,
+      "demonstrationTransitions": 58844,
+      "curriculumLevels": [2, 3, 4],
+      "epochs": 20,
+      "finalLoss": 0.00011522849906569994,
+      "evaluationEpisodes": 500,
+      "sb3Successes": 277,
+      "sb3SuccessRatePct": 55.4,
+      "sb3WilsonLcb95Pct": 51.01821562121957,
+      "onnxSuccesses": 275,
+      "onnxSuccessRatePct": 55.0,
+      "onnxWilsonLcb95Pct": 50.61764115934799,
+      "bingoFailures": 0,
+      "outOfBounds": 0,
+      "parityObservations": 200,
+      "maximumAbsoluteParityError": 3.5762786865234375e-7,
+      "parityThreshold": 0.0001,
+      "sb3Sha256": "0a9f0ab787a019d646061e1ece534000333a99fdb4a032f370946c7057856cd4",
+      "onnxSha256": "e7ed3e9437d663d03247a34ba21d5fbd37cbc34393a11b9ff54a157fd5d163cc"
+    }
+  },
+  "execution": {
+    "executionTimeMs": 896584.6000000015,
+    "typescriptTestsPassed": 74,
+    "pythonTestsPassed": 29,
+    "pythonExecutionMode": "cpu",
+    "lintErrors": 0,
+    "npmAuditVulnerabilities": 0,
+    "buildPassed": true
+  },
+  "invalidatedCampaigns": [
+    "All browser campaigns executed before radar draws were indexed by time step and SAFE_RTB became terminal before detection."
+  ],
+  "trainingDecision": {
+    "behaviorCloningRetrainedAndPromotedInBranch": true,
+    "ppoJustifiedByCurrentEvidence": false,
+    "autoresearchJustifiedByCurrentEvidence": false,
+    "reason": "The v2.4.4 Behavior Cloning model materially improves the previous ONNX on 500 fixed Python seeds and reaches 96/250 interceptions in the corrected browser campaign, with zero Bingo. PPO and AutoResearch are not justified. The 96/250 versus 89/250 POMDP difference is not claimed as statistically significant."
+  }
+}

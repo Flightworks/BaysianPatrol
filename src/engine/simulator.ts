@@ -17,6 +17,7 @@ import { RLPlanner } from './rlAlgorithm';
 import { calculatePdet } from './radarModel';
 import type { RadarParams } from './radarModel';
 import { normalizeAngle, SeededRandom } from './random';
+import { radarDetectionUniform, shouldTerminateBeforeDetection } from './simulationIntegrity';
 import { applySharedTargetReplay } from './playback';
 import { estimateWaypointTravelMinutes } from './missionContract';
 
@@ -35,8 +36,6 @@ export async function runSingleSimulationWithRealization(
     dt, meanHeading
   } = config;
 
-  const detectionRng = new SeededRandom(realization.seed ^ 0x51f15e);
-  
   const runConfig: ScenarioConfig = {
     ...config,
     windSpeed: realization.windSpeed,
@@ -166,8 +165,12 @@ export async function runSingleSimulationWithRealization(
       radarRange: radarBaseRange,
     });
 
+    if (shouldTerminateBeforeDetection(helico.status, outOfBounds)) {
+      break;
+    }
+
     if (pDetTarget > 0.05) {
-      if (detectionRng.uniform() < pDetTarget || distToTarget < 0.8) {
+      if (radarDetectionUniform(realization.seed, step) < pDetTarget || distToTarget < 0.8) {
         intercepted = true;
         interceptionTime = t;
         interceptPoint = { x: targetPoint.x, y: targetPoint.y };
@@ -199,9 +202,6 @@ export async function runSingleSimulationWithRealization(
       });
     }
 
-    if (helico.status === 'OUT_OF_FUEL' || helico.status === 'SAFE_RTB' || outOfBounds) {
-      break;
-    }
   }
 
   const fuelConsumed = helicoEndurance - Math.max(0, helico.fuelRemaining);
