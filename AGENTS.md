@@ -1,4 +1,4 @@
-# AGENTS.md — BaysianPatrol v2.4.0 hybride / Monte-Carlo
+# AGENTS.md — BaysianPatrol v2.4.4 hybride / Monte-Carlo
 
 Ce fichier est le contrat de travail pour tout agent intervenant sur le dépôt. **Python/Gymnasium est la référence canonique du contrat RL** ; TypeScript/ONNX doit reproduire exactement ses observations, actions, règles de sécurité et critères terminaux.
 
@@ -23,7 +23,7 @@ Résultats opérationnels communs :
 - `OUT_OF_FUEL` ;
 - `time_limit` / `TIME_LIMIT`.
 
-## 2. Contrat RL v2.3.1
+## 2. Contrat RL v2.4.4
 
 ### Observation `grid` — `(2, 32, 32)`
 
@@ -82,10 +82,11 @@ Pipeline principal : `python/hybrid_train.py`.
 
 1. Générer des démonstrations avec `env.expert_action()`.
 2. Initialiser la politique par Behavior Cloning.
-3. Affiner avec PPO selon le curriculum 1 → 4.
-4. Évaluer expert, BC et PPO sur le **même jeu fixe de seeds**.
-5. Exporter sous `PPO_CANDIDATE_*.onnx`.
-6. Ne promouvoir vers `public/models/baysian_patrol_policy.onnx` qu'après passage des gates.
+3. Évaluer d'abord le Behavior Cloning sur un **jeu fixe de seeds** séparé de l'entraînement.
+4. N'affiner avec PPO selon le curriculum 1 → 4 que si le Behavior Cloning conserve un déficit mesuré.
+5. Évaluer expert, BC et, le cas échéant, PPO sur le même jeu fixe de seeds.
+6. Exporter le candidat retenu en ONNX.
+7. Ne promouvoir vers `public/models/baysian_patrol_policy.onnx` qu'après passage des gates.
 
 Curriculum :
 
@@ -94,7 +95,7 @@ Curriculum :
 3. dérive stochastique ;
 4. dynamique complète.
 
-L'ancienne `autoresearch_v3.py` n'est pas la voie principale pour v2.3.1. Elle ne doit être réutilisée qu'après obtention d'une baseline hybride saine, pour des ablations limitées autour de cette baseline. Ne jamais relancer une recherche large d'hyperparamètres pour masquer un défaut de contrat.
+`autoresearch_v3.py` n'est pas la voie principale pour v2.4.4. Elle ne doit être réutilisée qu'après démonstration d'un déficit persistant du Behavior Cloning puis de PPO, pour des ablations limitées autour d'une baseline saine. Ne jamais relancer une recherche large d'hyperparamètres pour masquer un défaut de contrat.
 
 ## 4. Gates de promotion d'un modèle
 
@@ -130,7 +131,7 @@ La stratégie de référence `NAIVE` est un **Parallel Sweep IAMSAR** détermini
 - espacement constant dérivé de la largeur de balayage radar ;
 - retour frégate prioritaire dès le seuil carburant.
 
-L'interface métier ne doit exposer ni entraînement, ni hyperparamètres PPO, ni sélection de fichier ONNX. Le modèle qualifié seed 2027 est la stratégie hybride active. Le workflow est limité à `Comparaison`, `Carte tactique` et `Historique`; les vingt derniers résumés de campagne sont conservés localement sans leurs trajectoires.
+L'interface métier ne doit exposer ni entraînement, ni hyperparamètres PPO, ni sélection de fichier ONNX. Le Behavior Cloning qualifié pour la v2.4.4, seed 2026, est la stratégie hybride active. Le modèle historique seed 2027 reste une baseline, mais ne doit plus être réactivé par défaut. Le workflow est limité à `Comparaison`, `Carte tactique` et `Historique`; les vingt derniers résumés de campagne sont conservés localement sans leurs trajectoires.
 
 ## 6. Fichiers importants
 
@@ -139,6 +140,7 @@ python/baysian_patrol_env.py        environnement canonique
 python/hybrid_train.py              expert → BC → curriculum PPO
 python/export_onnx.py               export acteur SB3 réel
 python/tests/test_env_v231.py       contrat RL et sécurité
+python/tests/test_env_v244.py       paramètres et croyance initiale v2.4.4
 python/tests/test_hybrid_train.py   seeds, évaluation et démonstrations
 src/engine/missionContract.ts       contrat navigateur partagé
 src/engine/rlAlgorithm.ts           observation ONNX + autopilote + RTB
@@ -146,6 +148,7 @@ src/engine/bayesianGrid.ts          posterior Monte-Carlo
 src/engine/random.ts                PRNG seedé
 src/engine/targetGenerator.ts       réalisation et trajectoire cible
 src/engine/simulator.ts             Monte-Carlo apparié et outcomes
+src/engine/simulationIntegrity.ts   bruit radar apparié et états terminaux
 src/engine/iamsarPattern.ts         plan de balayage parallèle IAMSAR
 src/engine/runHistory.ts            historique compact local
 tests-ts/missionContract.test.ts    tests du contrat TypeScript
@@ -159,7 +162,7 @@ Depuis le dépôt :
 
 ```bash
 # Python
-python -m unittest discover -s python/tests -v
+CUDA_VISIBLE_DEVICES="" python -m unittest discover -s python/tests -v
 
 # Contrat TypeScript pur (Node >=22)
 node --experimental-strip-types --test tests-ts/*.test.ts
@@ -175,7 +178,7 @@ python python/hybrid_train.py \
   --eval-episodes 30 --seed 77
 ```
 
-Sur HP (`192.168.1.238`), privilégier quatre environnements CPU. La GTX 950M `sm_50` n'est pas une cible PyTorch moderne recommandée.
+Sur HP (`192.168.1.79`), privilégier quatre environnements CPU et exécuter PyTorch avec `CUDA_VISIBLE_DEVICES=""`. La GTX 950M `sm_50` n'est pas compatible avec les kernels CUDA du binaire PyTorch actuel.
 
 ## 8. Discipline de modification
 

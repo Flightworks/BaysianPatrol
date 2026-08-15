@@ -149,7 +149,7 @@ export function App() {
               </div>
               <div className="campaign-seed">
                 <span>Stratégie active</span>
-                <strong>Hybride · qualification 2027</strong>
+                <strong>Hybride BC · qualification 2.4.4</strong>
               </div>
             </section>
 

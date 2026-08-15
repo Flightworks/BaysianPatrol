@@ -77,7 +77,7 @@ export class BayesianGrid {
    */
   public updatePriorDensity(tMinutes: number): void {
     const {
-      datumX, datumY, sigmaDatumX, sigmaDatumY,
+      datumX, datumY, sigmaDatumX, sigmaDatumY, sigmaT,
       meanHeading, meanSpeed, sigmaSpeed, sigmaHeading, sigmaRouteDrift,
       windSpeed, windDirection,
     } = this.config;
@@ -98,13 +98,25 @@ export class BayesianGrid {
     const processCrossVariance = Math.pow(crossSpeed * tHours, 2) + routeVariance;
     const sinHeading = Math.sin(meanRad);
     const cosHeading = Math.cos(meanRad);
-    const varianceX = sigmaDatumX * sigmaDatumX + 9
+    const sigmaTimeHoursSquared = Math.pow(sigmaT / 60, 2);
+    const temporalAlongVariance = sigmaSpeed * sigmaSpeed * sigmaTimeHoursSquared;
+    const temporalCrossVariance = crossSpeed * crossSpeed * sigmaTimeHoursSquared;
+    const temporalVarianceX = sigmaTimeHoursSquared * meanVx * meanVx
+      + temporalAlongVariance * sinHeading * sinHeading
+      + temporalCrossVariance * cosHeading * cosHeading;
+    const temporalVarianceY = sigmaTimeHoursSquared * meanVy * meanVy
+      + temporalAlongVariance * cosHeading * cosHeading
+      + temporalCrossVariance * sinHeading * sinHeading;
+    const temporalCovarianceXY = sigmaTimeHoursSquared * meanVx * meanVy
+      + (temporalAlongVariance - temporalCrossVariance) * sinHeading * cosHeading;
+    const varianceX = sigmaDatumX * sigmaDatumX + 9 + temporalVarianceX
       + processAlongVariance * sinHeading * sinHeading
       + processCrossVariance * cosHeading * cosHeading;
-    const varianceY = sigmaDatumY * sigmaDatumY + 9
+    const varianceY = sigmaDatumY * sigmaDatumY + 9 + temporalVarianceY
       + processAlongVariance * cosHeading * cosHeading
       + processCrossVariance * sinHeading * sinHeading;
-    const covarianceXY = (processAlongVariance - processCrossVariance) * sinHeading * cosHeading;
+    const covarianceXY = temporalCovarianceXY
+      + (processAlongVariance - processCrossVariance) * sinHeading * cosHeading;
     const determinant = varianceX * varianceY - covarianceXY * covarianceXY;
     if (!(determinant > 0) || !Number.isFinite(determinant)) {
       throw new Error('Classical belief covariance must be positive definite');

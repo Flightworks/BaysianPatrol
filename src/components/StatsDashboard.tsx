@@ -20,7 +20,7 @@ const value = (stats: StrategyStats | undefined, field: keyof StrategyStats, suf
 
 export const StatsDashboard: React.FC<StatsDashboardProps> = ({ result }) => {
   const columns: StrategyColumn[] = [
-    { key: 'hybrid', name: 'Stratégie hybride', detail: 'Politique qualifiée 2027', stats: result.rlStats, featured: true },
+    { key: 'hybrid', name: 'Stratégie hybride', detail: 'Behavior Cloning qualifié 2.4.4', stats: result.rlStats, featured: true },
     { key: 'bayesian', name: 'Recherche bayésienne', detail: 'POMDP approché · gain d’information', stats: result.sigmaStats },
     { key: 'naive', name: 'Balayage parallèle', detail: 'Référence IAMSAR', stats: result.naiveStats },
   ];

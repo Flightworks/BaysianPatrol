@@ -46,8 +46,8 @@ export class TargetSim {
       // 2. Keep the observed datum fixed and draw hidden ground truth around it.
       const datumX = config.datumX;
       const datumY = config.datumY;
-      const spatialOffsetX = gaussian(0, config.sigmaDatumX);
-      const spatialOffsetY = gaussian(0, config.sigmaDatumY);
+      let spatialOffsetX = gaussian(0, config.sigmaDatumX);
+      let spatialOffsetY = gaussian(0, config.sigmaDatumY);
 
       // 3. Draw 360-degree Omnidirectional Frigate Departure Sector
       const frigateSectorDeg = source.uniform() * 360.0;
@@ -62,10 +62,10 @@ export class TargetSim {
       const frigateY = config.searchAreaCenterY + rDist * Math.cos(sectorRad);
 
       const helicoSpeed = Math.max(80.0, gaussian(config.helicoMaxSpeed, config.sigmaHelicoSpeed || 5.0));
-      const initialHeading = normalizeAngle(gaussian(config.meanHeading, config.sigmaHeading));
-      const initialSpeed = Math.max(5.0, gaussian(config.meanSpeed, config.sigmaSpeed));
-      const datumTimeOffsetMinutes = gaussian(0, config.sigmaT);
-      const initialTruth = deriveInitialTargetTruth({
+      let initialHeading = normalizeAngle(gaussian(config.meanHeading, config.sigmaHeading));
+      let initialSpeed = Math.max(5.0, gaussian(config.meanSpeed, config.sigmaSpeed));
+      let datumTimeOffsetMinutes = gaussian(0, config.sigmaT);
+      let initialTruth = deriveInitialTargetTruth({
         datumX,
         datumY,
         spatialOffsetX,
@@ -76,6 +76,37 @@ export class TargetSim {
         currentSpeed: windSpeed * 0.025,
         currentHeading: normalizeAngle(windDirection + 180 + 15),
       });
+
+      const minX = config.searchAreaCenterX - config.searchAreaWidth / 2;
+      const maxX = config.searchAreaCenterX + config.searchAreaWidth / 2;
+      const minY = config.searchAreaCenterY - config.searchAreaHeight / 2;
+      const maxY = config.searchAreaCenterY + config.searchAreaHeight / 2;
+      const isInsideSearchArea = (): boolean => initialTruth.x >= minX && initialTruth.x <= maxX
+        && initialTruth.y >= minY && initialTruth.y <= maxY;
+      const maximumTruthDraws = 1_000;
+      let truthDraws = 1;
+      while (!isInsideSearchArea() && truthDraws < maximumTruthDraws) {
+        spatialOffsetX = gaussian(0, config.sigmaDatumX);
+        spatialOffsetY = gaussian(0, config.sigmaDatumY);
+        initialHeading = normalizeAngle(gaussian(config.meanHeading, config.sigmaHeading));
+        initialSpeed = Math.max(5.0, gaussian(config.meanSpeed, config.sigmaSpeed));
+        datumTimeOffsetMinutes = gaussian(0, config.sigmaT);
+        initialTruth = deriveInitialTargetTruth({
+          datumX,
+          datumY,
+          spatialOffsetX,
+          spatialOffsetY,
+          timeOffsetMinutes: datumTimeOffsetMinutes,
+          speed: initialSpeed,
+          heading: initialHeading,
+          currentSpeed: windSpeed * 0.025,
+          currentHeading: normalizeAngle(windDirection + 180 + 15),
+        });
+        truthDraws += 1;
+      }
+      if (!isInsideSearchArea()) {
+        throw new Error(`Unable to draw initial target truth inside the search area after ${maximumTruthDraws} attempts`);
+      }
       const seed = Math.floor(source.uniform()*0xffffffff);
 
       this.realization = {

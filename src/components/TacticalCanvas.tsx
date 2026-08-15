@@ -613,7 +613,7 @@ export const TacticalCanvas: React.FC<TacticalCanvasProps> = ({
       <div className="tactical-legend absolute bottom-3 left-3 z-10 flex items-center space-x-3 px-3 py-1.5 text-xs font-mono">
         <div className="flex items-center space-x-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
-          <span className="text-purple-300 font-bold">Hybride 2027</span>
+          <span className="text-purple-300 font-bold">Hybride BC 2.4.4</span>
           {selectedRlRun && <span className="text-[10px] text-slate-400">({runOutcomeLabel(selectedRlRun)})</span>}
         </div>
         <div className="h-3.5 w-px bg-slate-700" />
